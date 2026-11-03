@@ -253,8 +253,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("api_configuration/custom_models"), QJsonArray(),
      ConfigurationValueKind::Structured},
 #endif
-    {QStringLiteral("storage/schema_version"), 4, ConfigurationValueKind::Integer,
-     ConfigurationIntegerRange{4, 4, 1}},
+    {QStringLiteral("storage/schema_version"), 5, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{5, 5, 1}},
     {QStringLiteral("interface/theme_mode"),
      QStringLiteral("system"),
      ConfigurationValueKind::String,
@@ -387,7 +387,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("zh-Hant")}},
     {QStringLiteral("screenshot_translation/language_detection_confidence_threshold"), 60,
      ConfigurationValueKind::Integer, ConfigurationIntegerRange{30, 100}},
-    {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("screenshot_translation/model"), QStringLiteral("free-translation"),
+     ConfigurationValueKind::String},
 #endif
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     {QStringLiteral("screenshot_conversion/vision_model"), QString(),
@@ -1644,6 +1645,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
       QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+      QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
       QStringLiteral("open_function_settings")}},
     {QStringLiteral("tray/middle_click_action"),
      QStringLiteral("screenshot_fixed"),
@@ -1651,6 +1653,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
       QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+      QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
       QStringLiteral("open_function_settings")}},
     {QStringLiteral("tray/menu_options"),
      QJsonArray{

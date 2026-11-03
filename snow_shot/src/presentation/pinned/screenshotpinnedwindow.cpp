@@ -66,6 +66,8 @@
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
+#include "snow_shot/presentation/screenshotocrlayout.h"
+#include "snow_shot/presentation/screenshotocrtextlayout.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -474,6 +476,12 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
             }
         }
         results.translatedText->prepareForRendering();
+        if (const auto indices = snow_shot::presentation::ocrTranslationSourceIndices(
+                *results.translatedText, *results.text->presentation)) {
+            setScreenshotOcrTranslationFontCaps(results.translatedText->lines,
+                                                results.text->presentation->lines, *indices,
+                                                QApplication::font());
+        }
 #else
         // Consume the legacy extension without constructing a translated presentation.
         if (version == 1) {
@@ -5376,6 +5384,15 @@ void ScreenshotPinnedWindow::configureEditToolbar(
                 if (m_recognitionSession != nullptr)
                     m_recognitionSession->applyTextTargetLanguage(language);
             });
+    connect(toolbar, &ScreenshotToolPalette::textTranslationServicesRequested, this, [this] {
+        if (m_recognitionSession != nullptr)
+            m_recognitionSession->requestTextTranslationServices();
+    });
+    connect(toolbar, &ScreenshotToolPalette::textTranslationServiceRequested, this,
+            [this](const QString& service) {
+                if (m_recognitionSession != nullptr)
+                    m_recognitionSession->applyTextTranslationService(service);
+            });
     connect(toolbar, &ScreenshotToolPalette::tableMergeRequested, this,
             &ScreenshotPinnedWindow::handleTableMergeRequested);
     connect(toolbar, &ScreenshotToolPalette::tableSplitRequested, this,
@@ -6143,6 +6160,14 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 if (m_cropRect)
                     snapshot->visibleCanvasRect = visibleCanvasRect();
                 return renderScreenshotRecognitionImage(*snapshot);
+            },
+            {},
+            [this](const QVector<SnowShotChatModel>& models, const QString& selection,
+                   bool loading) {
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette())
+                        palette->setTextTranslationServices(models, selection, loading);
+                }
             },
         },
         this);

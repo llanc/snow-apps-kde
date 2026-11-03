@@ -35,6 +35,7 @@ class QTextDocument;
 class QTextBrowser;
 class QTextEdit;
 class QTimer;
+class ScreenshotTableDocument;
 class ScreenshotLatexRenderer;
 class QUrl;
 class ScreenshotFormattedTextLayer;
@@ -74,11 +75,13 @@ struct ScreenshotRecognitionWindowActions {
     std::function<void(const QUrl&)> handleLinkActivated = ignoreLink;
     std::function<void()> handleUndoTextEdit = noAction;
     std::function<void()> handleRedoTextEdit = noAction;
-    std::function<ScreenshotSelectionDragMode(const QPointF&)> selectionResizeDragMode =
-        noResizeHandle;
-    std::function<bool(const QPointF&)> beginSelectionResize = declineResize;
-    std::function<void(const QPointF&)> updateSelectionResize = ignoreResize;
-    std::function<void(const QPointF&)> finishSelectionResize = ignoreResize;
+    // Selection gestures use global logical positions: this surface moves and resizes with
+    // the selection, so its local coordinates and rendered bounds cannot define drag input.
+    std::function<ScreenshotSelectionDragMode(const QPointF&)>
+        selectionResizeDragModeAtGlobalPosition = noResizeHandle;
+    std::function<bool(const QPointF&)> beginSelectionResizeAtGlobalPosition = declineResize;
+    std::function<void(const QPointF&)> updateSelectionResizeAtGlobalPosition = ignoreResize;
+    std::function<void(const QPointF&)> finishSelectionResizeAtGlobalPosition = ignoreResize;
     std::function<void()> selectionResizeFinished = noAction;
     std::function<void()> handleCopy = noAction;
 };
@@ -159,6 +162,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void clearFormattedText();
 
     void setTableSession(std::shared_ptr<ScreenshotTableEditingSession> session);
+    void showTablePreview(const ScreenshotTableDocument& document);
     void clearTableSession(bool retainEditor = false);
     [[nodiscard]] ScreenshotTableCommandState tableCommandState() const;
     void mergeTableSelection();
@@ -331,6 +335,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     ScreenshotFormattedTextLayer* m_formattedTextLayer = nullptr;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     ScreenshotTableEditor* m_tableEditor = nullptr;
+    bool m_tablePreview = false;
 #else
     static constexpr QWidget* m_tableEditor = nullptr;
 #endif

@@ -107,9 +107,11 @@
     "ScreenshotOriginalImagePreviewWindow",
     "ScreenshotRecognitionWindow",
     "ScreenshotRecognitionSessionController",
+    "ScreenshotTableConversionController",
     "ScreenshotTableEditor"
   ],
   "translation": [
+    "FreeTranslation",
     "ScreenshotTranslationSettingsDialog",
     "TranslationLanguages",
     "TranslationPageWidget",
