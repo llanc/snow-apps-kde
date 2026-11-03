@@ -1,0 +1,50 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # This workflow is specific to this fork, even if copied to another repo.
+    if: github.repository == 'llanc/snow-apps-kde'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge upstream into the checkout
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/mg-chao/snow-apps.git
+          git rev-parse HEAD > "$RUNNER_TEMP/snow-fork-head"
+          scripts/sync-upstream.sh
+          git rev-parse 'FETCH_HEAD^{commit}' > "$RUNNER_TEMP/snow-upstream-head"
+      - name: Check sync and Linux build configuration
+        run: |
+          python3 scripts/test-sync-upstream.py
+          python3 scripts/test-linux-build-support.py
+      - name: Synchronize the fork on GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fork_head=$(git ls-remote origin refs/heads/main | cut -f1)
+          upstream_head=$(git ls-remote upstream refs/heads/main | cut -f1)
+          if [[ "$fork_head" != "$(cat "$RUNNER_TEMP/snow-fork-head")" || \
+                "$upstream_head" != "$(cat "$RUNNER_TEMP/snow-upstream-head")" ]]; then
+            echo 'A branch changed during validation; the next run will retry.' >&2
+            exit 1
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main
