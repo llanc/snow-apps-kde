@@ -741,8 +741,8 @@ class CompositionSink final : public PixelSink {
 
 class AnimationDecodeSession::Impl final {
   public:
-    Impl(InputBytes bytes, DecodeOptions options, Index index)
-        : bytes(std::move(bytes)), options(options), index(std::move(index)) {}
+    Impl(InputBytes inputBytes, DecodeOptions decodeOptions, Index frameIndex)
+        : bytes(std::move(inputBytes)), options(decodeOptions), index(std::move(frameIndex)) {}
     ~Impl() {
 #ifdef SNOW_IMAGE_HAS_GIF
         closeGif();

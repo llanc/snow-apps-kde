@@ -74,7 +74,8 @@ void ScreenshotCaptureWorker::refreshLayout(
 
 void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
                                       const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-                                      SnowCaptureCancellationToken* cancellationToken) {
+                                      SnowCaptureCancellationToken* cancellationToken,
+                                      const ScreenshotCaptureScreen*, const std::atomic_bool*) {
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.worker_entry");
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;

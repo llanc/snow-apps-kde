@@ -30,8 +30,10 @@ class WindowSurfaceObserver final : public QObject {
   std::function<void()> changed_;
   std::function<void()> retiring_;
   bool widgetSource_ = true;
+#ifdef Q_OS_MACOS
   void* nativeObservation_ = nullptr;
   quintptr nativeView_ = 0;
+#endif
   std::shared_ptr<bool> synchronizing_ = std::make_shared<bool>(false);
 };
 }  // namespace adqt::widgets::detail

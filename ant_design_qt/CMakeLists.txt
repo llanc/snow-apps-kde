@@ -59,6 +59,10 @@ set_source_files_properties(
         SKIP_UNITY_BUILD_INCLUSION ON
 )
 add_library(ant_design_icons_qt STATIC ${ADQT_ICONS_SOURCES})
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # The generated icon catalog exceeds Clang's default constexpr step limit.
+    target_compile_options(ant_design_icons_qt PRIVATE -fconstexpr-steps=100000000)
+endif()
 if(SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION)
     snow_apply_release_options(ant_design_icons_qt POLICY size)
 else()

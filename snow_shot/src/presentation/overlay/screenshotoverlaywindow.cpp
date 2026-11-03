@@ -73,6 +73,8 @@ qint64 paintRegionArea(const QRegion& region) {
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
+#elif defined(Q_OS_LINUX)
+#include "../../platform/linux/waylandoverlay.h"
 #endif
 
 ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eventSink,
@@ -119,6 +121,9 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
 
     initializeScreenshotSurface();
     setCanvasClearBackgroundEnabled(false);
+#ifdef Q_OS_LINUX
+    snow_shot::platform::configureWaylandScreenshotOverlay(*this, QGuiApplication::platformName());
+#endif
 }
 
 ScreenshotOverlayWindow::~ScreenshotOverlayWindow() {

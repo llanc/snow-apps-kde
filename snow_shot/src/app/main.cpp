@@ -114,7 +114,7 @@ startupDiagnosticsOptions(const QString& selectedDirectory, const QString& appli
     return options;
 }
 
-#ifndef Q_OS_MACOS
+#ifdef Q_OS_WIN
 QString updateInstallationRoot(const QString& executableDirectory) {
     return QFileInfo(executableDirectory).dir().absolutePath();
 }
@@ -492,8 +492,8 @@ int main(int argc, char* argv[]) {
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &singleInstance,
                      [&singleInstance] { singleInstance.stopAcceptingLaunchRequests(); });
 
-#ifndef Q_OS_MACOS
-    // macOS updates use a downloaded DMG, not the standalone transaction helper.
+#ifdef Q_OS_WIN
+    // Only the Windows updater uses the standalone transaction helper.
     if (!snow_shot::app::distribution::isStoreManaged()) {
         QString executablePath = QString::fromLocal8Bit(argv[0]);
 #ifdef Q_OS_WIN

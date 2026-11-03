@@ -6,12 +6,18 @@
 #include <QObject>
 #include <QPointer>
 
+#include <atomic>
 #include <cstdint>
 
 typedef struct SnowCaptureDesktopSessionImpl SnowCaptureDesktopSession;
 typedef struct SnowCaptureCancellationTokenImpl SnowCaptureCancellationToken;
 
 class ScreenshotCaptureCoordinator;
+
+struct ScreenshotCaptureScreen {
+    QString name;
+    QRect physicalRect;
+};
 
 class ScreenshotCaptureWorker final : public QObject {
   public:
@@ -22,7 +28,9 @@ class ScreenshotCaptureWorker final : public QObject {
                        const QPointer<ScreenshotCaptureCoordinator>& coordinator);
     void capture(const ScreenshotCaptureRequest& request,
                  const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-                 SnowCaptureCancellationToken* cancellationToken);
+                 SnowCaptureCancellationToken* cancellationToken,
+                 const ScreenshotCaptureScreen* screen = nullptr,
+                 const std::atomic_bool* cancelled = nullptr);
 
   private:
     bool ensureSession(const QVector<std::uint32_t>& excludedWindowIds = {});

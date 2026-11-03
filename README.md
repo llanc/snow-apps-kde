@@ -52,6 +52,12 @@ Installation reuses Snow Shot's local signing identity and may request Keychain
 access and macOS privacy permissions. See [Homebrew installation and migration](docs-macos-build.md#homebrew-installation)
 for existing installations, custom app directories, and recovery.
 
+## Linux and KDE
+
+The KDE Wayland port is in progress and is not yet a supported release. See
+[Linux/KDE port status and upstream synchronization](docs-linux-kde.md) for the
+implemented pieces, focused tests, and remaining platform work.
+
 ## Maintain the OCR submodule
 
 [`snow-crates/crates/simd-paddle-ocr-rs/`](snow-crates/crates/simd-paddle-ocr-rs/)

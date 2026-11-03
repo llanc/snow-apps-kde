@@ -1,4 +1,4 @@
-if(NOT APPLE AND NOT SNOW_SHOT_DISTRIBUTION_CHANNEL STREQUAL "store")
+if(WIN32 AND NOT SNOW_SHOT_DISTRIBUTION_CHANNEL STREQUAL "store")
     # The GPL updater is a standalone Rust package inside the Snow Shot license boundary. The main
     # application links only the Qt process/protocol adapter below.
     set(_snow_shot_updater_manifest_dir
@@ -32,6 +32,8 @@ endif()
 
 if(APPLE)
     set(_snow_update_source src/update/macosupdateservice.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(_snow_update_source src/platform/linux/linuxupdateservice.cpp)
 else()
     set(_snow_update_source src/update/updateservice.cpp)
 endif()
@@ -53,12 +55,12 @@ endif()
 target_link_libraries(snow_shot_settings PUBLIC snow_shot_updates)
 
 target_link_libraries(snow_shot PRIVATE snow_shot_updates)
-if(APPLE)
+if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # An incremental build may still contain the helper copied by an older configuration.
     add_custom_command(TARGET snow_shot POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E rm -f "$<TARGET_FILE_DIR:snow_shot>/snow-shot-updater")
 endif()
-if(NOT APPLE AND NOT SNOW_SHOT_DISTRIBUTION_CHANNEL STREQUAL "store")
+if(WIN32 AND NOT SNOW_SHOT_DISTRIBUTION_CHANNEL STREQUAL "store")
     add_dependencies(snow_shot snow-shot-updater)
     add_custom_command(TARGET snow_shot POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
@@ -82,6 +84,8 @@ if(SNOW_SHOT_BUILD_UPDATE_TESTS)
     if(APPLE)
         add_executable(snow-shot-update-adapter-tests tests/macos_update_tests.cpp)
         target_link_libraries(snow-shot-update-adapter-tests PRIVATE Qt6::Network)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(snow-shot-update-adapter-tests tests/linux_update_service_tests.cpp)
     else()
         # The macOS version-check service uses portable Qt networking. Exercise it on Windows
         # as well, without linking the Windows helper adapter into the same executable.

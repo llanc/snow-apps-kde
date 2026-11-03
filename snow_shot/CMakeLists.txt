@@ -132,6 +132,33 @@ endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowQt.cmake")
 snow_find_qt(COMPONENTS Widgets LinguistTools Svg Network)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    snow_find_qt(COMPONENTS DBus)
+    link_libraries(Qt6::DBus)
+    set(SNOW_SHOT_CAPTURE_WORKER_SOURCE src/platform/linux/screenshotcaptureworker.cpp)
+    add_library(snow_shot_linux_wayland_overlay STATIC src/platform/linux/waylandoverlay.cpp
+        src/platform/linux/waylandoverlay.h)
+    target_link_libraries(snow_shot_linux_wayland_overlay PUBLIC Qt6::Widgets)
+    snow_shot_register_source_capability(linux_wayland_overlay
+        FULL_TARGET snow_shot_linux_wayland_overlay MINI_TARGET snow_shot_linux_wayland_overlay)
+    snow_shot_source_requires(linux_wayland_overlay SOURCES
+        src/presentation/overlay/screenshotoverlaywindow.cpp)
+    add_library(snow_shot_linux_capture_exclusion STATIC
+        src/platform/linux/windowcaptureexclusion.cpp)
+    target_include_directories(snow_shot_linux_capture_exclusion PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow_shot_linux_capture_exclusion PUBLIC Qt6::Widgets)
+    snow_shot_register_source_capability(linux_capture_exclusion
+        FULL_TARGET snow_shot_linux_capture_exclusion MINI_TARGET snow_shot_linux_capture_exclusion)
+    snow_shot_source_requires(linux_capture_exclusion SOURCES
+        src/presentation/recording/screenrecordingcontroller.cpp)
+    if(SNOW_SHOT_BUILD_TESTS)
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../test-support/linux-portal"
+            "${CMAKE_CURRENT_BINARY_DIR}/linux-portal-tests")
+    endif()
+else()
+    set(SNOW_SHOT_CAPTURE_WORKER_SOURCE src/presentation/capture/screenshotcaptureworker.cpp)
+endif()
 
 add_library(snow_shot_distribution STATIC
     include/snow_shot/app/distribution.h
@@ -1010,6 +1037,9 @@ elseif(APPLE)
     list(APPEND SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
         src/platform/macos/globalshortcutbackend.cpp
         src/platform/macos/focusedfullscreenwindow.mm)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
+        src/platform/linux/globalshortcutbackend.cpp)
 endif()
 list(APPEND SNOW_SHOT_SETTINGS_SOURCES ${SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES})
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/components/screenshothistorypagewidget.cpp"
@@ -1958,7 +1988,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcapturecoordinator.cpp
     src/presentation/capture/screenshotcapturedisplaymodelreconciler.cpp
     src/presentation/capture/screenshotcaptureruntimeadapter.cpp
-    src/presentation/capture/screenshotcaptureworker.cpp
+    ${SNOW_SHOT_CAPTURE_WORKER_SOURCE}
     src/presentation/capture/screenshotcapturepolicy.cpp
     src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
@@ -2141,6 +2171,11 @@ qt_add_executable(snow_shot
     MANUAL_FINALIZATION
     ${PROJECT_SOURCES}
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(snow_shot PRIVATE src/platform/linux/screenshotportal.cpp
+        src/platform/linux/screenshotportal.h)
+    target_link_libraries(snow_shot PRIVATE Qt6::DBus)
+endif()
 snow_shot_link_macos_window_platform(snow_shot)
 if(WIN32 AND SNOW_SHOT_DISTRIBUTION_CHANNEL STREQUAL "store")
     add_dependencies(snow_shot snow_shot_explorer_command)
@@ -11034,6 +11069,17 @@ if(WIN32)
             CACHE INTERNAL "FFmpeg runtime files installed with Snow Shot.")
         unset(SNOW_RUNTIME_FILES)
     endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SNOW_SHOT_FFMPEG REQUIRED IMPORTED_TARGET GLOBAL
+        libavfilter libavformat libavcodec libswresample libswscale libavutil)
+    foreach(_snow_rust_bundle IN ITEMS snow_shot_rust_ffi_bundle snow_shot_full_rust_ffi_bundle)
+        if(TARGET ${_snow_rust_bundle})
+            target_link_libraries(${_snow_rust_bundle} INTERFACE PkgConfig::SNOW_SHOT_FFMPEG)
+        endif()
+    endforeach()
+    unset(_snow_rust_bundle)
+    target_link_libraries(snow_shot PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
 endif()
 
 target_sources(snow_shot PRIVATE src/diagnostics/ffmpegdiagnostics.cpp)
@@ -13406,6 +13452,8 @@ elseif(APPLE)
     target_link_libraries(snow_shot_live_window PRIVATE "-framework AppKit"
         "-framework ApplicationServices" "-framework QuartzCore" "-framework CoreVideo"
         "-framework IOSurface")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(snow_shot_live_window PRIVATE src/platform/linux/livewindownative.cpp)
 endif()
 snow_shot_register_source_capability(live_window
     FULL_TARGET snow_shot_live_window MINI_TARGET snow_shot_live_window)

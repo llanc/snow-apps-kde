@@ -7,11 +7,16 @@
 #include "snow_capture.h"
 
 #include <QCoreApplication>
+#ifdef Q_OS_LINUX
+#include <QGuiApplication>
+#include <QScreen>
+#endif
 #include <QMetaObject>
 #include <QPointer>
 #include <QThread>
 
 #include <utility>
+#include <optional>
 
 struct ScreenshotCaptureCoordinator::CancellationState final {
     CancellationState() : token(snow_capture_cancellation_token_create()) {}
@@ -22,13 +27,15 @@ struct ScreenshotCaptureCoordinator::CancellationState final {
         }
     }
 
-    void cancel() const {
+    void cancel() {
+        cancelled.store(true, std::memory_order_relaxed);
         if (token != nullptr) {
             snow_capture_cancellation_token_cancel(token);
         }
     }
 
     SnowCaptureCancellationToken* token = nullptr;
+    std::atomic_bool cancelled = false;
 };
 
 ScreenshotCaptureCoordinator::ScreenshotCaptureCoordinator(QObject* parent) : QObject(parent) {}
@@ -77,9 +84,25 @@ void ScreenshotCaptureCoordinator::captureAsync(const ScreenshotCaptureRequest& 
         // backend metadata when the global cursor cannot be sampled.
     }
     const QPointer<ScreenshotCaptureCoordinator> coordinator(this);
+    std::optional<ScreenshotCaptureScreen> screen;
+#ifdef Q_OS_LINUX
+    const auto screens = QGuiApplication::screens();
+    if (screens.size() == 1 && screens.first() != nullptr) {
+        const QScreen* qtScreen = screens.first();
+        const QRect geometry = qtScreen->geometry();
+        const qreal scale = qtScreen->devicePixelRatio();
+        if (geometry.isValid() && scale > 0.0) {
+            screen = ScreenshotCaptureScreen{
+                qtScreen->name(),
+                QRect(geometry.topLeft(),
+                      QSize(qRound(geometry.width() * scale), qRound(geometry.height() * scale)))};
+        }
+    }
+#endif
     if (!postWorkerTask(
-            [coordinator, preparedRequest, cancellation](ScreenshotCaptureWorker& worker) {
-                worker.capture(preparedRequest, coordinator, cancellation->token);
+            [coordinator, preparedRequest, cancellation, screen](ScreenshotCaptureWorker& worker) {
+                worker.capture(preparedRequest, coordinator, cancellation->token,
+                               screen ? &*screen : nullptr, &cancellation->cancelled);
             })) {
         cancellation->cancel();
         ScreenshotCaptureResult result;
