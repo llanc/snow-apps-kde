@@ -205,8 +205,15 @@ ScreenshotColorPickerWindow::ScreenshotColorPickerWindow(QWidget* parent)
     hide();
 }
 
-void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
-    if (parentWidget() == owner && isWindow()) {
+ScreenshotColorPickerWindow::SurfaceMode
+ScreenshotColorPickerWindow::surfaceModeForPlatform(const QString& platformName) {
+    return platformName.startsWith(QLatin1String("wayland")) ? SurfaceMode::OverlayChild
+                                                             : SurfaceMode::NativeWindow;
+}
+
+void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner, SurfaceMode mode) {
+    const bool embedded = owner != nullptr && mode == SurfaceMode::OverlayChild;
+    if (parentWidget() == owner && isWindow() != embedded) {
         return;
     }
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
@@ -215,7 +222,7 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
 
     hidePicker();
     m_preparedSurfaceDevicePixelRatio = 0.0;
-    setParent(owner, colorPickerWindowFlags());
+    setParent(owner, embedded ? Qt::WindowFlags(Qt::Widget) : colorPickerWindowFlags());
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_ShowWithoutActivating, true);
@@ -223,6 +230,10 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
     setFocusPolicy(Qt::NoFocus);
 
     if (owner == nullptr) {
+        return;
+    }
+    if (embedded) {
+        move(owner->rect().center() - rect().center());
         return;
     }
 
@@ -241,7 +252,7 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
 }
 
 void ScreenshotColorPickerWindow::prepareNativeSurface() {
-    if (isVisible()) {
+    if (!isWindow() || isVisible()) {
         return;
     }
 
@@ -590,7 +601,7 @@ bool ScreenshotColorPickerWindow::updatePosition(const QPointF& overlayLocalPosi
     QPoint cursorPosition = overlayLocalPosition.toPoint();
     QRect bounds;
     if (owner != nullptr) {
-        const QPoint ownerOrigin = owner->mapToGlobal(QPoint());
+        const QPoint ownerOrigin = isWindow() ? owner->mapToGlobal(QPoint()) : QPoint();
         cursorPosition += ownerOrigin;
         bounds = QRect(ownerOrigin, owner->size());
     }

@@ -463,6 +463,15 @@ class SystemTrayController::Impl {
         updateIcon();
 
         setMenuOptions({});
+#ifdef Q_OS_LINUX
+        if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+            // Plasma presents the menu exported through StatusNotifierItem. A
+            // detached popup has no usable screen position on Wayland.
+            auto* nativeMenu = createMenu();
+            nativeMenu->setDeleteOnHide(false);
+            trayIcon->setContextMenu(nativeMenu);
+        }
+#endif
 
         // Cocoa opens an attached menu on left-click too. Handle Context explicitly there.
         QObject::connect(trayIcon, &QSystemTrayIcon::activated, &q,
@@ -479,6 +488,8 @@ class SystemTrayController::Impl {
                              } else if (reason == QSystemTrayIcon::MiddleClick) {
                                  dispatchClickAction(middleClickAction);
                              } else if (reason == QSystemTrayIcon::Context) {
+                                 if (trayIcon->contextMenu())
+                                     return;
                                  if (menu && menu->isPopupVisible())
                                      return;
                                  auto* popup = createMenu();
@@ -937,7 +948,8 @@ SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& 
 SystemTrayController::~SystemTrayController() = default;
 
 adqt::widgets::AdContextMenu* SystemTrayController::createContextMenu() {
-    if (m_impl->menu && m_impl->menu->isPopupVisible())
+    if (m_impl->menu &&
+        (m_impl->menu->isPopupVisible() || m_impl->trayIcon->contextMenu() == m_impl->menu))
         return m_impl->menu;
     return m_impl->createMenu();
 }

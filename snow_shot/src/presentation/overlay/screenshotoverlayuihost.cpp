@@ -38,6 +38,10 @@
 #endif
 
 namespace {
+ScreenshotColorPickerWindow::SurfaceMode colorPickerSurfaceMode() {
+    return ScreenshotColorPickerWindow::surfaceModeForPlatform(QGuiApplication::platformName());
+}
+
 constexpr int kShortcutHintsMargin = 16;
 constexpr int kShortcutHintsPadding = 16;
 constexpr int kShortcutHintsRadius = 6;
@@ -558,8 +562,9 @@ void ScreenshotOverlayUiHost::prepareColorPickerSurface(ScreenshotOverlayWindow*
     // Capture-result preparation must not move a picker that already follows
     // the cursor on another display back to the first overlay.
     if (m_colorPicker != nullptr && overlay != nullptr &&
-        (m_colorPicker->parentWidget() == nullptr || m_colorPicker->windowHandle() == nullptr)) {
-        m_colorPicker->setOwnerWindow(overlay);
+        (m_colorPicker->parentWidget() == nullptr ||
+         (m_colorPicker->isWindow() && m_colorPicker->windowHandle() == nullptr))) {
+        m_colorPicker->setOwnerWindow(overlay, colorPickerSurfaceMode());
     }
     if (m_colorPicker != nullptr && m_colorPicker->parentWidget() != nullptr) {
         m_colorPicker->prepareNativeSurface();
@@ -600,9 +605,7 @@ void ScreenshotOverlayUiHost::updateColorPicker(
     if (picker == nullptr) {
         return;
     }
-    if (picker->parentWidget() != overlay || !picker->isWindow()) {
-        picker->setOwnerWindow(overlay);
-    }
+    picker->setOwnerWindow(overlay, colorPickerSurfaceMode());
 
     picker->setCaptureImage(image, physicalRect, cursorPatch, cursorPixelRect);
     picker->updatePicker(physicalPoint, localPosition, true, displayValues);

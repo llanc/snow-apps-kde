@@ -135,6 +135,8 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
   public:
     ScreenshotOverlayRightClickResult rightClickResult = ScreenshotOverlayRightClickResult::Ignored;
     std::function<void()> cancel = [] {};
+    std::function<void(ScreenshotOverlayWindow*, const QPointF&)> move =
+        [](ScreenshotOverlayWindow*, const QPointF&) {};
     void completeRightClickCancellation() override {
         cancel();
     }
@@ -145,7 +147,10 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
 
     void handleOverlayMousePress(ScreenshotOverlayWindow*, const QPointF&) override {}
 
-    void handleOverlayMouseMove(ScreenshotOverlayWindow*, const QPointF&) override {}
+    void handleOverlayMouseMove(ScreenshotOverlayWindow* overlay,
+                                const QPointF& position) override {
+        move(overlay, position);
+    }
 
     void handleOverlayMouseRelease(ScreenshotOverlayWindow*, const QPointF&) override {}
 
@@ -164,6 +169,56 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
 
     void raiseToolbarForCanvasInteraction() override {}
 };
+
+void overlayMouseMovesUpdateThePicker() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary picker storage must be available");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({temporary.filePath(QStringLiteral("bin")), temporary.path(), 60000})
+                .success,
+            "picker storage must initialize");
+    {
+        NoopOverlayEventSink sink;
+        ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget);
+        overlay.setCaptureGeometry(QRect(0, 0, 800, 600));
+        overlay.setGeometry(0, 0, 800, 600);
+        overlay.show();
+        ScreenshotOverlayUiHost host;
+        host.createColorPicker();
+        host.prepareColorPickerSurface(&overlay);
+        QImage image(800, 600, QImage::Format_RGBA8888);
+        image.fill(Qt::red);
+        image.setPixelColor(270, 180, Qt::blue);
+        sink.move = [&](ScreenshotOverlayWindow* owner, const QPointF& position) {
+            host.updateColorPicker(
+                owner, image, image.rect(), position.toPoint(), position,
+                {position, ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
+        };
+        const auto sendMove = [&](const QPoint& position) {
+            QMouseEvent event(QEvent::MouseMove, position, overlay.mapToGlobal(position),
+                              Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(overlay.canvas(), &event);
+        };
+        sendMove(QPoint(120, 100));
+        auto* picker = host.colorPicker();
+        require(picker && picker->isVisible() &&
+                    picker->currentColorText() == QStringLiteral("#FF0000"),
+                "a canvas mouse move must show the sampled picker");
+        const QPoint previous = picker->pos();
+        sendMove(QPoint(270, 180));
+        require(picker->pos() - previous == QPoint(150, 80) &&
+                    picker->currentColorText() == QStringLiteral("#0000FF"),
+                "the picker must follow the next canvas mouse move and sample its new color");
+        if (QGuiApplication::platformName().startsWith(QStringLiteral("wayland"))) {
+            require(picker->parentWidget() == &overlay && !picker->isWindow() &&
+                        picker->testAttribute(Qt::WA_TransparentForMouseEvents),
+                    "Wayland must display the picker as an input-transparent overlay child");
+        } else {
+            require(picker->isWindow(), "other platforms must retain the native picker window");
+        }
+    }
+    storage.shutdown();
+}
 
 class OverlayRevealFixture final {
   public:
@@ -2392,6 +2447,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--overlay-mouse-picker-only"))) {
+        overlayMouseMovesUpdateThePicker();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--exit-confirmation-stacking-only"))) {
         exitConfirmationStacksAbovePicker();
         return 0;

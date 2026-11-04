@@ -514,6 +514,55 @@ void pickerPreparationPreservesCanvasInputSurfaces() {
         }
     }
 }
+
+void embeddedPickerFollowsTheOverlayPointer() {
+    using Mode = ScreenshotColorPickerWindow::SurfaceMode;
+    require(ScreenshotColorPickerWindow::surfaceModeForPlatform(QStringLiteral("wayland")) ==
+                    Mode::OverlayChild &&
+                ScreenshotColorPickerWindow::surfaceModeForPlatform(
+                    QStringLiteral("wayland-egl")) == Mode::OverlayChild &&
+                ScreenshotColorPickerWindow::surfaceModeForPlatform(QStringLiteral("offscreen")) ==
+                    Mode::NativeWindow,
+            "Wayland must use an overlay child while other platforms keep the native picker");
+    QWidget owner;
+    owner.setGeometry(320, 180, 800, 600);
+    QWidget canvas(&owner);
+    canvas.setGeometry(owner.rect());
+    canvas.setMouseTracking(true);
+    owner.show();
+
+    ScreenshotColorPickerWindow picker;
+    picker.setOwnerWindow(&owner, Mode::OverlayChild);
+    picker.prepareNativeSurface();
+    require(picker.parentWidget() == &owner && !picker.isWindow() &&
+                !picker.testAttribute(Qt::WA_NativeWindow) &&
+                picker.testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                canvas.internalWinId() == 0,
+            "the overlay picker must be an input-transparent non-native child");
+
+    QImage image(owner.size(), QImage::Format_RGBA8888);
+    image.fill(Qt::red);
+    image.setPixelColor(240, 160, Qt::blue);
+    picker.setCaptureImage(image, image.rect());
+    picker.updatePicker(QPoint(100, 100), QPointF(100, 100), true);
+    QApplication::processEvents();
+    const QPoint initial = picker.pos();
+    require(picker.isVisible() && initial.x() > 100 && initial.y() > 100 &&
+                picker.currentColorText() == QStringLiteral("#FF0000"),
+            "the embedded picker must appear next to the pointer in overlay coordinates");
+    picker.setOwnerWindow(&owner, Mode::OverlayChild);
+    picker.updatePicker(QPoint(240, 160), QPointF(240, 160), true);
+    QApplication::processEvents();
+    require(picker.isVisible() && picker.pos() == initial + QPoint(140, 60) &&
+                picker.currentColorText() == QStringLiteral("#0000FF"),
+            "pointer movement must move the existing picker and update the sampled color");
+    picker.updatePicker(QPoint(790, 590), QPointF(790, 590), true);
+    require(picker.pos().x() < 790 && picker.pos().y() < 590,
+            "the embedded picker must stay inside the overlay near its bottom-right edge");
+    picker.setOwnerWindow(nullptr);
+    require(picker.parentWidget() == nullptr && picker.isWindow() && !picker.isVisible(),
+            "detaching an embedded picker must hide it and restore top-level ownership");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -521,6 +570,10 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--embedded-picker-only"))) {
+        embeddedPickerFollowsTheOverlayPointer();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--magnifier-animation-only"))) {
         pickerPreparationPreservesCanvasInputSurfaces();
         return 0;
@@ -540,5 +593,6 @@ int main(int argc, char** argv) {
     plainHexPreservesSixUppercaseDigits();
     pickerUsesASeparateClickThroughWindow();
     pickerPreparationPreservesCanvasInputSurfaces();
+    embeddedPickerFollowsTheOverlayPointer();
     return 0;
 }

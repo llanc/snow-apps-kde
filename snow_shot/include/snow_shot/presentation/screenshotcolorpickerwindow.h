@@ -15,9 +15,12 @@ class QPaintEvent;
 
 class ScreenshotColorPickerWindow final : public QWidget {
   public:
+    enum class SurfaceMode { NativeWindow, OverlayChild };
+
     explicit ScreenshotColorPickerWindow(QWidget* parent = nullptr);
 
-    void setOwnerWindow(QWidget* owner);
+    [[nodiscard]] static SurfaceMode surfaceModeForPlatform(const QString& platformName);
+    void setOwnerWindow(QWidget* owner, SurfaceMode mode = SurfaceMode::NativeWindow);
     void prepareNativeSurface();
     void resetForNewCapture();
     void setCaptureImage(const QImage& image, const QRect& physicalRect,

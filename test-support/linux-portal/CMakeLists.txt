@@ -50,6 +50,10 @@ add_executable(snow-shot-linux-fake-portal
     ../../snow_shot/tests/linux_fake_screenshot_portal.cpp)
 target_link_libraries(snow-shot-linux-fake-portal PRIVATE Qt6::Core Qt6::DBus Qt6::Gui)
 snow_apply_strict_warnings(snow-shot-linux-fake-portal)
+add_executable(snow-shot-linux-fake-status-notifier
+    ../../snow_shot/tests/linux_fake_status_notifier.cpp)
+target_link_libraries(snow-shot-linux-fake-status-notifier PRIVATE Qt6::Core Qt6::DBus)
+snow_apply_strict_warnings(snow-shot-linux-fake-status-notifier)
 find_program(DBUS_RUN_SESSION dbus-run-session REQUIRED)
 add_test(NAME snow-shot-linux-portal-tests
     COMMAND "${DBUS_RUN_SESSION}" -- $<TARGET_FILE:snow-shot-linux-portal-tests>)

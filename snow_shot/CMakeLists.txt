@@ -7751,6 +7751,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
+    add_test(NAME snow-shot-overlay-mouse-picker-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests --overlay-mouse-picker-only -platform offscreen)
+    set_tests_properties(snow-shot-overlay-mouse-picker-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-exit-confirmation-stacking-tests
         COMMAND snow-shot-color-picker-lifecycle-tests --exit-confirmation-stacking-only -platform offscreen)
     set_tests_properties(snow-shot-exit-confirmation-stacking-tests PROPERTIES

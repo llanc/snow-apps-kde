@@ -6,6 +6,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import struct
@@ -37,14 +38,25 @@ def main():
                         help="Also test KDE shortcuts using this probe executable")
     parser.add_argument("--viewer-probe", type=Path,
                         help="Also open a synthetic image with the viewer test executable")
+    parser.add_argument("--picker-probe", type=Path,
+                        help="Also exercise the overlay color picker")
+    parser.add_argument("--picker-host-probe", type=Path,
+                        help="Also exercise mouse movements through the overlay")
+    parser.add_argument("--tray-watcher", type=Path,
+                        help="Also exercise the exported KDE tray menu with a fake watcher")
     args = parser.parse_args()
     application = args.application.resolve(strict=True)
     bridge = args.bridge.resolve(strict=True)
     fake_portal = args.fake_portal.resolve(strict=True)
     shortcut_probe = args.kde_shortcut_probe.resolve(strict=True) if args.kde_shortcut_probe else None
     viewer_probe = args.viewer_probe.resolve(strict=True) if args.viewer_probe else None
+    picker_probe = args.picker_probe.resolve(strict=True) if args.picker_probe else None
+    picker_host_probe = args.picker_host_probe.resolve(strict=True) if args.picker_host_probe else None
+    tray_watcher = args.tray_watcher.resolve(strict=True) if args.tray_watcher else None
     if shortcut_probe and not args.wayland:
         parser.error("--kde-shortcut-probe requires --wayland")
+    if (picker_probe or picker_host_probe or tray_watcher) and not args.wayland:
+        parser.error("--picker-probe, --picker-host-probe and --tray-watcher require --wayland")
     if os.environ.get("SNOW_LINUX_PRIVATE_TEST_BUS") != "1":
         with tempfile.TemporaryDirectory(prefix="snow-shot-linux-bus-") as temporary:
             env = isolated_environment(Path(temporary))
@@ -57,6 +69,12 @@ def main():
                 command.extend(["--kde-shortcut-probe", str(shortcut_probe)])
             if viewer_probe:
                 command.extend(["--viewer-probe", str(viewer_probe)])
+            if picker_probe:
+                command.extend(["--picker-probe", str(picker_probe)])
+            if picker_host_probe:
+                command.extend(["--picker-host-probe", str(picker_host_probe)])
+            if tray_watcher:
+                command.extend(["--tray-watcher", str(tray_watcher)])
             return subprocess.call(command, env=env)
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "snow_shot/tests"))
@@ -71,11 +89,15 @@ def main():
         config.parent.mkdir(parents=True)
         config.write_text(json.dumps({
             "storage": {"schema_version": 4}, "mcp": {"enabled": True},
-            "tray": {"enabled": False},
+            "tray": {"enabled": bool(tray_watcher),
+                     "menu_options": ["quick.screenshot", "tray.window-grouping",
+                                      "tray.show-main-window", "tray.exit"]},
+            "interface": {"language": "en_US"},
         }), encoding="utf-8")
 
         compositor = None
         portal = None
+        watcher = None
         application_process = None
         client = None
         with (root / "application.log").open("w+", encoding="utf-8") as log, \
@@ -102,12 +124,19 @@ def main():
                     if not socket.exists():
                         raise RuntimeError("The isolated KWin compositor did not start")
                     env.update(QT_QPA_PLATFORM="wayland", XDG_SESSION_TYPE="wayland",
-                               WAYLAND_DISPLAY="snow-test")
+                               XDG_CURRENT_DESKTOP="KDE", WAYLAND_DISPLAY="snow-test")
                     if shortcut_probe:
                         subprocess.run([str(shortcut_probe)], cwd=root,
                                        env=dict(env, XDG_CURRENT_DESKTOP="KDE"),
                                        check=True, timeout=20)
                         print("KDE global shortcut registration and release passed")
+                if tray_watcher:
+                    watcher = subprocess.Popen([str(tray_watcher)], cwd=root, env=env,
+                                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                               text=True, start_new_session=True)
+                    readable, _, _ = select.select([watcher.stdout], [], [], 15)
+                    if not readable or watcher.stdout.readline().strip() != "ready":
+                        raise RuntimeError("The fake status notifier watcher did not start")
                 portal = subprocess.Popen(
                     [str(fake_portal), str(root / "synthetic.png"), "800",
                      "600" if args.wayland else "800"], cwd=root, env=env,
@@ -117,6 +146,14 @@ def main():
                 readable, _, _ = select.select([portal.stdout], [], [], 15)
                 if not readable or portal.stdout.readline().strip() != "ready":
                     raise RuntimeError("The synthetic screenshot portal did not start")
+                if picker_probe:
+                    subprocess.run([str(picker_probe), "--embedded-picker-only"], cwd=root,
+                                   env=env, check=True, timeout=20)
+                    print("Wayland screenshot color picker follows overlay coordinates")
+                if picker_host_probe:
+                    subprocess.run([str(picker_host_probe), "--overlay-mouse-picker-only"], cwd=root,
+                                   env=env, check=True, timeout=20)
+                    print("Wayland screenshot mouse events update the picker")
                 if viewer_probe:
                     subprocess.run([str(viewer_probe)], cwd=root, env=env, check=True, timeout=20)
                     print("Image viewer opened a synthetic PNG")
@@ -133,6 +170,36 @@ def main():
                     log.flush()
                     raise RuntimeError("MCP endpoint did not start:\n" + log.name)
                 client = Client(bridge, descriptor)
+                if watcher:
+                    readable, _, _ = select.select([watcher.stdout], [], [], 15)
+                    registration = watcher.stdout.readline().strip() if readable else ""
+                    parts = registration.split()
+                    if len(parts) != 3 or parts[0] != "registered":
+                        raise RuntimeError(f"The application did not register a tray icon: {registration}")
+                    service, item_path = parts[1:]
+                    def dbus_call(path, method, *arguments):
+                        return subprocess.check_output([
+                            "gdbus", "call", "--session", "--dest", service, "--object-path", path,
+                            "--method", method, *arguments], text=True, timeout=10)
+                    item_menu = dbus_call(item_path, "org.freedesktop.DBus.Properties.Get",
+                                          "org.kde.StatusNotifierItem", "Menu")
+                    menu_path_match = re.search(r"objectpath '([^']+)'", item_menu)
+                    if not menu_path_match:
+                        raise RuntimeError(f"The tray icon did not export a menu: {item_menu}")
+                    menu_path = menu_path_match.group(1)
+                    dbus_call(menu_path, "com.canonical.dbusmenu.AboutToShow", "0")
+                    layout = dbus_call(menu_path, "com.canonical.dbusmenu.GetLayout", "0", "1",
+                                       "['label', 'visible', 'enabled']")
+                    if "Screenshot" not in layout or "Exit" not in layout:
+                        raise RuntimeError(f"The KDE tray menu has no expected actions: {layout}")
+                    group = re.search(r"<\((\d+), \{[^}]*'label': <'Window Group: [^']+'>", layout)
+                    if not group:
+                        raise RuntimeError(f"The tray group submenu is missing: {layout}")
+                    dbus_call(menu_path, "com.canonical.dbusmenu.AboutToShow", group.group(1))
+                    submenu = dbus_call(menu_path, "com.canonical.dbusmenu.GetLayout", group.group(1),
+                                        "1", "['label', 'visible', 'enabled']")
+                    if "New Group" not in submenu:
+                        raise RuntimeError(f"The tray group submenu did not populate: {submenu}")
                 for presentation in ("silent", "visible"):
                     begun = client.tool("snow_shot_screenshot_begin", {
                         "presentation": presentation, "target": "current_monitor",
@@ -161,6 +228,16 @@ def main():
                     if png[:8] != b"\x89PNG\r\n\x1a\n" or struct.unpack(">II", png[16:24]) != (90, 90):
                         raise RuntimeError("The selected synthetic screenshot did not render")
                     client.tool("snow_shot_screenshot_cancel", {"session_id": session_id})
+                if watcher:
+                    # Execute an exported action as a tray host, using only isolated state.
+                    match = re.search(r"<\((\d+), \{[^}]*'label': <'Exit'>[^}]*\}", layout)
+                    if not match:
+                        raise RuntimeError(f"The exported tray Exit action was not found: {layout}")
+                    dbus_call(menu_path, "com.canonical.dbusmenu.Event", match.group(1), "clicked",
+                              "<0>", "0")
+                    if application_process.wait(timeout=15) != 0:
+                        raise RuntimeError("The exported tray Exit action did not close the app")
+                    print("KDE tray menu exports and activates its configured actions")
                 backend = "virtual KWin Wayland" if args.wayland else "Qt offscreen"
                 print(f"Linux screenshot acquisition, selection and render passed ({backend})")
             except Exception:
@@ -174,7 +251,7 @@ def main():
             finally:
                 if client is not None:
                     client.close()
-                for process in (application_process, portal, compositor):
+                for process in (application_process, portal, watcher, compositor):
                     if process is not None and process.poll() is None:
                         os.killpg(process.pid, signal.SIGTERM)
                     if process is not None:
