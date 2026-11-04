@@ -6,8 +6,8 @@ Screenshot acquisition, selection and rendering have been exercised with a
 synthetic desktop portal in both Qt offscreen mode and an isolated virtual KWin
 Wayland session; shortcut registration and release were also tested against that
 KWin session. The viewer's image loading and edit worker have offscreen tests.
-The real desktop portal's permission flow has not yet been tested.
-There is no Linux installer yet.
+The real desktop portal's permission flow has not yet been tested. A per-user
+menu installer is available; there is no Linux system package yet.
 
 The in-progress screenshot path uses the XDG desktop screenshot portal and
 requires a single display whose portal image dimensions match Qt's display
@@ -40,6 +40,7 @@ truth.
 ```sh
 mise install rust@1.97.1 rust@nightly-2026-09-08 python@3.14
 scripts/build-linux-kde.sh
+scripts/install-linux-kde.sh
 scripts/run-snow-shot-linux.sh --show-main-window
 scripts/run-snow-image-viewer-linux.sh /path/to/image.png
 ```
@@ -71,6 +72,7 @@ cmake --build build/linux-portal-tests
 ctest --test-dir build/linux-portal-tests -R '^snow-shot-linux-(portal|shortcut|update)-tests$' --output-on-failure
 mise x python@3.14 -- python scripts/test-linux-build-support.py
 mise x python@3.14 -- python scripts/test-sync-upstream.py
+mise x python@3.14 -- python scripts/test-linux-kde-install.py
 mise x python@3.14 -- python scripts/test-linux-startup.py build/linux-snow-shot-clang/snow_shot/snow_shot
 mise x python@3.14 -- python scripts/test-linux-screenshot-integration.py \
   build/linux-snow-shot-clang/snow_shot/snow_shot \

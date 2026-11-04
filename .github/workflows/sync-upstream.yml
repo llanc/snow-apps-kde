@@ -36,6 +36,7 @@ jobs:
         run: |
           python3 scripts/test-sync-upstream.py
           python3 scripts/test-linux-build-support.py
+          python3 scripts/test-linux-kde-install.py
       - name: Synchronize the fork on GitHub
         env:
           GH_TOKEN: ${{ github.token }}
