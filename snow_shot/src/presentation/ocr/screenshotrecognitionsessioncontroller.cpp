@@ -417,7 +417,7 @@ void ScreenshotRecognitionSessionController::setProviders(
 #endif
             if (affected)
                 if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
-                            tr("Recognition service changed. Retry to use the updated settings.")))
+                            tr("Recognition service changed. Retry to use the updated settings")))
                     return;
             if (!updateRecognitionModels())
                 return;
@@ -464,7 +464,7 @@ void ScreenshotRecognitionSessionController::setProviders(
                 if (affected) {
                     if (!notify(
                             &ScreenshotRecognitionSessionController::failModelRecognition,
-                            tr("Model configuration changed. Retry to use the updated settings.")))
+                            tr("Model configuration changed. Retry to use the updated settings")))
                         return;
                 }
                 if (!updateRecognitionModels())
@@ -702,6 +702,19 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     notify(&ScreenshotRecognitionSessionController::recognitionResultsChanged);
 }
 
+std::optional<ScreenshotOcrRecognitionResult>
+ScreenshotRecognitionSessionController::cachedTextRecognitionResult() const {
+    if (!hasTarget())
+        return std::nullopt;
+    const auto text = m_textCache.constFind(m_target.key);
+    if (text == m_textCache.cend() || !text->recognitionResult.error.isEmpty() ||
+        !text->recognitionResult.presentation)
+        return std::nullopt;
+    auto result = text->recognitionResult;
+    result.filteredImage = {};
+    return result;
+}
+
 ScreenshotRecognitionResults
 ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
     ScreenshotRecognitionResults results;
@@ -734,12 +747,7 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     results.conversions = m_conversion->entries(m_target.key);
 #endif
-    if (const auto text = m_textCache.constFind(m_target.key);
-        text != m_textCache.cend() && text->recognitionResult.error.isEmpty() &&
-        text->recognitionResult.presentation != nullptr) {
-        results.text = text->recognitionResult;
-        results.text->filteredImage = {};
-    }
+    results.text = cachedTextRecognitionResult();
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     results.tableModelSelection = m_tableModelSelection;
     results.tableEffectiveModel = resolvedRecognitionModel(Mode::Table);
@@ -1243,7 +1251,7 @@ void ScreenshotRecognitionSessionController::activateModelResult() {
             m_recognitionAwaitingModel = false;
             if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
                         tr("Snow Shot's visual understanding model is unavailable. Choose "
-                           "another model or retry.")))
+                           "another model or retry")))
                 return;
         }
         return;
@@ -1259,7 +1267,7 @@ void ScreenshotRecognitionSessionController::activateModelResult() {
                 return;
         } else if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
                            tr("The selected recognition model is unavailable. Choose another model "
-                              "or retry."))) {
+                              "or retry"))) {
             return;
         }
         return;
@@ -3424,7 +3432,7 @@ void ScreenshotRecognitionSessionController::materializeTableEntry(
             !guard->recognitionEntryValid(entry.model, entry.modelFingerprint)) {
             if (!guard->notify(
                     &ScreenshotRecognitionSessionController::failModelRecognition,
-                    tr("Recognition service changed. Retry to use the updated settings.")))
+                    tr("Recognition service changed. Retry to use the updated settings")))
                 return;
             return;
         }

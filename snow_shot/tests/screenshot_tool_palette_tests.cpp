@@ -1873,7 +1873,7 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
                 "Show Cursor must retranslate with its configurable shortcut");
         cursorPalette.setCursorAvailable(false);
         const QString unavailable = QCoreApplication::translate(
-            "ScreenshotToolPalette", "Cursor data is unavailable for this screenshot.");
+            "ScreenshotToolPalette", "Cursor data is unavailable for this screenshot");
         require(cursorButton->toolTip() == unavailable &&
                     cursorButton->accessibleName() == cursorLabel &&
                     cursorButton->accessibleDescription() == unavailable &&
@@ -19779,7 +19779,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     cursor->click();
     require(!cursor->isEnabled() && cursorChanges == 0 &&
                 cursor->toolTip() ==
-                    QStringLiteral("Cursor data is unavailable for this screenshot."),
+                    QStringLiteral("Cursor data is unavailable for this screenshot"),
             "unavailable cursor data must disable its action with an explanation");
     palette.setCursorAvailable(true);
     cursor->click();
@@ -20383,6 +20383,8 @@ void layoutCompactionToolbar() {
     }
 }
 
+void runScreenshotQuickTextAnnotationToolbarTests();
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir storageDirectory;
@@ -20428,6 +20430,10 @@ int main(int argc, char** argv) {
         application.setFont(previewFont);
     }
 #endif
+    if (application.arguments().contains(QStringLiteral("--quick-text-annotation-only"))) {
+        runScreenshotQuickTextAnnotationToolbarTests();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--custom-color-presets-only"))) {
         customColorPresetSettingsPersistAndValidate(
             {executableDirectory, storageDirectory.path(), 60000});

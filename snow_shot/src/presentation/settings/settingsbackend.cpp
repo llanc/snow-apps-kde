@@ -255,7 +255,7 @@ applyNativeStartupSettings(bool enabled, bool elevated,
     if (!result.success && !save(restoredEnabled, restoredElevated)) {
         auto failed = result;
         failed.error += QCoreApplication::translate(
-            "AdministratorLaunch", " Settings recovery failed. Retry before closing Snow Shot.");
+            "AdministratorLaunch", " Settings recovery failed. Retry before closing Snow Shot");
         return failed;
     }
     return result;
@@ -957,6 +957,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::TextRecognitionSettings().showTextHighlighting();
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
         return storage::PinToScreenSettings().automaticTextRecognition();
+    case SettingsSwitchBinding::PinQuickAnnotationForSelectedText:
+        return storage::PinToScreenSettings().quickAnnotationForSelectedText();
     case SettingsSwitchBinding::PinAutoResizeWindow:
         return storage::PinToScreenSettings().autoResizeWindow();
     case SettingsSwitchBinding::PinShowWindowButtons:
@@ -1082,7 +1084,7 @@ bool BuiltInSettingsBackend::applyContextMenuSettings(const QJsonValue& mode,
             result.error +=
                 QLatin1Char(' ') +
                 QCoreApplication::translate(
-                    "SettingsBackend", "Could not restore the Windows context menu preference.");
+                    "SettingsBackend", "Could not restore the Windows context menu preference");
         }
         emit operationMessage(result.error, false);
     }
@@ -1137,6 +1139,9 @@ QString BuiltInSettingsBackend::switchHint(SettingsSwitchBinding binding) const 
         .launchHint;
 }
 bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
+    if (binding == SettingsSwitchBinding::PinQuickAnnotationForSelectedText)
+        return storage::PinToScreenSettings().textSelectionOnRecognitionResults() ==
+               QStringLiteral("always");
     if (binding == SettingsSwitchBinding::ScreenshotShowSaveResult)
         return storage::ScreenshotSettings().saveAsFileDialog() == QStringLiteral("snow_shot");
     if (app::distribution::isStoreManaged()) {
@@ -1288,6 +1293,10 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     }
     if (binding == SettingsSwitchBinding::PinAutomaticTextRecognition) {
         return storage::PinToScreenSettings().setAutomaticTextRecognition(value);
+    }
+    if (binding == SettingsSwitchBinding::PinQuickAnnotationForSelectedText) {
+        return switchEnabled(binding) &&
+               storage::PinToScreenSettings().setQuickAnnotationForSelectedText(value);
     }
     if (binding == SettingsSwitchBinding::PinAutoResizeWindow) {
         return storage::PinToScreenSettings().setAutoResizeWindow(value);
@@ -1445,6 +1454,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ShowOriginalImagePreview:
     case SettingsSwitchBinding::ShowTextHighlighting:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
+    case SettingsSwitchBinding::PinQuickAnnotationForSelectedText:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::PinShowWindowButtons:
     case SettingsSwitchBinding::PinShakeWindowToHideOthers:
@@ -2223,7 +2233,7 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
                 result = future.get();
             } catch (...) {
                 result.error = QCoreApplication::translate(
-                    "DiagnosticsService", "The diagnostics writer stopped unexpectedly.");
+                    "DiagnosticsService", "The diagnostics writer stopped unexpectedly");
             }
             if (!result.success) {
                 m_copyLogBusy = false;
@@ -2245,9 +2255,9 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
             if (!handle.isValid()) {
                 m_copyLogBusy = false;
                 emit synchronized();
-                emit actionFinished(binding, false,
-                                    QCoreApplication::translate("SettingsBackend",
-                                                                "The clipboard is unavailable."));
+                emit actionFinished(
+                    binding, false,
+                    QCoreApplication::translate("SettingsBackend", "The clipboard is unavailable"));
             }
         });
         poll->start();
@@ -2315,7 +2325,7 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
             m_configurationBusy = false;
             emit synchronized();
             const QString error =
-                QCoreApplication::translate("SettingsBackend", "The clipboard is unavailable.");
+                QCoreApplication::translate("SettingsBackend", "The clipboard is unavailable");
             emit operationMessage(error, false);
             emit actionFinished(binding, false, error);
         }
@@ -2348,7 +2358,7 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
         read.preserveOmittedCredentials(current);
         if (!importConfigurationSnapshot(read.values, read.schemaVersion)) {
             finish(false, QCoreApplication::translate("SettingsBackend",
-                                                      "The configuration could not be imported."));
+                                                      "The configuration could not be imported"));
             return true;
         }
         const storage::StorageResult flushed = applicationStorage.flushNow();
@@ -2913,6 +2923,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
             {QStringLiteral("pin_to_screen/automatic_text_recognition"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/automatic_text_recognition"))},
+            {QStringLiteral("pin_to_screen/quick_annotation_for_selected_text"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/quick_annotation_for_selected_text"))},
             {QStringLiteral("pin_to_screen/auto_resize_window"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/auto_resize_window"))},
