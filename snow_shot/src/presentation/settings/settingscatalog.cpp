@@ -3214,10 +3214,17 @@ SettingsItemDefinition importConfigurationItem() {
     payload.iconFactory = []() { return custom_outlined_icons::ImportConfiguration(); };
     payload.confirmation = {
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration?")),
+#ifdef Q_OS_LINUX
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Compatible settings will be imported. Local paths and platform-specific settings "
+            "will be kept. Some changes take effect after the app restarts")),
+#else
         settingsText(QT_TRANSLATE_NOOP(
             "SettingsCatalog",
             "All current application settings will be replaced by the archive's values. Some "
             "changes take effect after the app restarts")),
+#endif
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import")),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
     };

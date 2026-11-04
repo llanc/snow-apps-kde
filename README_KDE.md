@@ -55,6 +55,17 @@ See the [port status and limitations](docs-linux-kde.md) before relying on it.
 The real screenshot portal may request permission; multi-display capture,
 screen recording and several platform-specific features are not yet supported.
 
+### Import settings from Windows
+
+Export the settings archive in Windows, then choose **Export & storage → Data
+storage → Import configuration** in the Linux app. Linux keeps its own screenshot
+and recording directories, manual save history, skin image and custom tray icon
+paths, save path shortcuts, startup options, and process priority. The import
+result lists these settings. Other compatible preferences are imported normally.
+
+Global mouse gestures are not yet supported on Linux; keyboard shortcuts are
+available through KDE's global shortcut service.
+
 ## 中文说明
 
 本分支为 CachyOS x86-64、KDE Plasma 和 Wayland 提供实验性的 Snow Shot 与
@@ -104,3 +115,12 @@ scripts/build-linux-kde.sh
 
 在同一目录重新构建后，菜单入口仍可使用。首次截图时桌面门户可能请求授权；
 多显示器截图、录屏和部分平台功能尚未支持，详情见 [移植状态与限制](docs-linux-kde.md)。
+
+### 从 Windows 导入设置
+
+在 Windows 版中导出配置压缩包，然后在 Linux 版中选择 **导出与存储 → 数据存储 →
+导入配置**。截图和录屏保存目录、上次手动保存目录、皮肤和自定义托盘图标路径、保存路径快捷方式，
+以及开机启动、管理员启动和进程优先级会保留本机设置；导入完成后会显示这些项目。
+其他兼容的设置会正常导入。
+
+Linux 版目前尚不支持全局鼠标手势；键盘快捷键可通过 KDE 全局快捷键服务使用。

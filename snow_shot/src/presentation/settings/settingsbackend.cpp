@@ -2355,6 +2355,9 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
         // the same salvage and upgrade rules as loading persisted configuration.
         const auto current = applicationStorage.configuration().snapshot();
         read.preserveOmittedDirectories(current);
+#ifdef Q_OS_LINUX
+        read.preserveLinuxLocalSettings(current);
+#endif
         read.preserveOmittedCredentials(current);
         if (!importConfigurationSnapshot(read.values, read.schemaVersion)) {
             finish(false, QCoreApplication::translate("SettingsBackend",
@@ -2366,7 +2369,19 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
             finish(false, flushed.error);
             return true;
         }
+#ifdef Q_OS_LINUX
+        finish(true,
+               QCoreApplication::translate(
+                   "SettingsBackend", "These settings were kept on this device:\n\n"
+                                      "- Screenshot and recording save directories\n"
+                                      "- Last manual save directory\n"
+                                      "- Main window, toolbar, and tray skin image paths\n"
+                                      "- Custom tray icon paths\n"
+                                      "- Screenshot save path shortcuts\n"
+                                      "- Startup, administrator launch, and application priority"));
+#else
         finish(true, {});
+#endif
         return true;
     }
     }

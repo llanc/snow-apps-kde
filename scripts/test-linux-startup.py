@@ -66,6 +66,10 @@ def main():
             output, _ = process.communicate(timeout=10)
         if not ready:
             raise RuntimeError(f"Normal startup did not reach application.ready:\n{output}")
+        logs = "\n".join(log.read_text(encoding="utf-8", errors="replace")
+                         for log in root.rglob("*.log"))
+        if "Global mouse input initialization failed" in output + logs:
+            raise RuntimeError("Unsupported global mouse gestures caused a startup error")
         print("Linux startup probe and isolated normal startup passed")
 
 

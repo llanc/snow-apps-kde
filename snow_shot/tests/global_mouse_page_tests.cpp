@@ -1004,6 +1004,28 @@ void globalMousePermissionGuidance() {
 #endif
 }
 
+void unsupportedGlobalMouseIsExplainedInSettings() {
+    using Status = presentation::GlobalMousePermissionState::Status;
+    FakeSettingsBackend backend;
+    backend.permission = {Status::Unsupported};
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    SettingsPageWidget page(registry, QStringLiteral("global-mouse"), session);
+    page.resize(900, 720);
+    page.show();
+    flushEvents();
+    auto* row = rowForTitle(page, QStringLiteral("Copy to clipboard"));
+    require(row != nullptr, "the global mouse configuration row must exist");
+    auto* button = configurationButton(*row);
+    require(button->toolTip().contains(QStringLiteral("not supported")) &&
+                button->accessibleDescription() == button->toolTip(),
+            "unsupported global mouse gestures must be explained in the settings tooltip");
+    backend.setPermission({Status::Ready, true, true, true});
+    require(!button->toolTip().contains(QStringLiteral("not supported")) &&
+                button->accessibleDescription().isEmpty(),
+            "the explanation must update when global mouse availability changes");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1011,6 +1033,7 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("global-mouse-page-tests"));
     globalMousePermissionGuidance();
+    unsupportedGlobalMouseIsExplainedInSettings();
     globalMousePageRendersActionButtons();
     noneClearsAssignedMouseBinding();
     globalMouseAndGlobalHotkeyRowsSharePresentation();

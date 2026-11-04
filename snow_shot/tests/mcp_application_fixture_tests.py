@@ -195,6 +195,52 @@ def await_job(client, response):
     raise AssertionError(f"job {identifier} did not complete")
 
 
+def exercise_linux_configuration_import(client, directory):
+    settings = client.tool("snow_shot_settings_get")
+    fields = {field["id"]: field["value"] for field in settings["result"]["fields"]}
+    portable = "drawing.remember-last-used-tool"
+    image_directory = "screenshot-output.image-save-directory"
+    archive = directory / "configuration.zip"
+    client.tool("snow_shot_configuration_export", {"path": str(archive)})
+    with zipfile.ZipFile(archive) as contents:
+        manifest = contents.read("manifest.json")
+        configuration = json.loads(contents.read("config.json"))
+    configuration.update({
+        "drawing/remember_last_used_tool": not fields[portable],
+        "screenshot/image_save_directory": "C:/Users/Example/Pictures",
+        "interface/skin_path": "C:/skins/main.png",
+        "tray/custom_icon": "C:/icons/tray.ico",
+        "system/auto_start_at_boot": False,
+        "system/launch_as_administrator": True,
+        "system/application_priority": "high",
+    })
+    # Exercise both immediate and asynchronous history-policy completion paths.
+    for change_history in (False, True):
+        if change_history:
+            configuration["capture_history/enabled"] = not configuration["capture_history/enabled"]
+        with zipfile.ZipFile(archive, "w") as contents:
+            for name, payload in (("manifest.json", manifest),
+                                  ("config.json", json.dumps(configuration).encode())):
+                info = zipfile.ZipInfo(name)
+                info.create_system = 0
+                info.external_attr = 0x20
+                info.compress_type = zipfile.ZIP_DEFLATED
+                contents.writestr(info, payload)
+        current = client.tool("snow_shot_settings_get")
+        job = await_job(client, client.tool("snow_shot_configuration_import", {
+            "expected_revision": current["revision"], "path": str(archive)}))
+        skipped = job["result"]["skipped_local_settings"]
+        assert {"screenshot/image_save_directory", "interface/skin_path", "tray/custom_icon",
+                "system/auto_start_at_boot", "system/launch_as_administrator",
+                "system/application_priority"}.issubset(skipped), job
+        updated = client.tool("snow_shot_settings_get")
+        actual = {field["id"]: field["value"] for field in updated["result"]["fields"]}
+        assert actual[portable] is not fields[portable] and \
+            actual[image_directory] == fields[image_directory], actual
+    return {"domains": ["configuration_import", "preserved_local_settings", "quit_acknowledgement"],
+            "scope": "Isolated Linux configuration import through the production MCP router"}
+
+
 def resource(client, uri):
     response = client.request("resources/read", {"uri": uri})
     contents = response["contents"]
@@ -755,6 +801,8 @@ def main():
                         help="Exercise only repeated media clipboard publication and cancellation")
     parser.add_argument("--animation-only", action="store_true",
                         help="Exercise only animated media imports, transforms, replacement and exports")
+    parser.add_argument("--linux-configuration-import-only", action="store_true",
+                        help="Exercise only Linux configuration import and its skipped settings")
     args = parser.parse_args()
     if (args.recording or args.native_capture) and args.platform == "offscreen":
         parser.error("native capture and recording require --platform windows or --platform cocoa")
@@ -776,7 +824,9 @@ def main():
                                               (directory / "application.log").read_text(encoding="utf-8"))
                 client = Client(args.bridge, descriptor)
                 try:
-                    if args.animation_only:
+                    if args.linux_configuration_import_only:
+                        report = exercise_linux_configuration_import(client, directory)
+                    elif args.animation_only:
                         report = exercise_animation(client, directory)
                     elif args.clipboard_only:
                         report = exercise_clipboard(client, directory)

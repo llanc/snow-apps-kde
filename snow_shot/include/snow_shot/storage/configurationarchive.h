@@ -15,9 +15,12 @@ struct ConfigurationArchiveReadResult {
     int schemaVersion = 0;
     QString error;
     QStringList redactedCredentialIds;
+    QStringList skippedLocalSettings;
     // Restores local save directories absent from the archive. Explicit values in
     // older archives take precedence over the receiving configuration.
     void preserveOmittedDirectories(const QMap<QString, QJsonValue>& current);
+    // Keeps paths and platform-specific runtime settings belonging to this Linux installation.
+    void preserveLinuxLocalSettings(const QMap<QString, QJsonValue>& current);
     void preserveOmittedCredentials(const QMap<QString, QJsonValue>& current);
 
     [[nodiscard]] bool isValid() const {

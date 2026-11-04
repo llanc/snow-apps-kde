@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
+#include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
@@ -282,6 +283,13 @@ void GlobalMouseRow::syncButton() {
                 snow_shot::presentation::GlobalMousePermissionState::Status::Ready
             ? snow_shot::presentation::GlobalShortcutStatus::Registered
             : snow_shot::presentation::GlobalShortcutStatus::Failed);
+    const auto state = m_runtimeSession.globalMousePermissionState();
+    const bool unsupported =
+        state.status == snow_shot::presentation::GlobalMousePermissionState::Status::Unsupported;
+    m_button->setToolTip(unsupported ? snow_shot::presentation::globalMousePermissionMessage(state)
+                                     : m_button->accessibleName());
+    m_button->setAccessibleDescription(
+        unsupported ? snow_shot::presentation::globalMousePermissionMessage(state) : QString());
 }
 
 void GlobalMouseRow::syncModalText() {

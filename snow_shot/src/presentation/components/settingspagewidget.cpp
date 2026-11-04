@@ -780,8 +780,7 @@ class SettingsPageWidget::Impl {
                          });
         QObject::connect(
             &runtimeSession, &settings::SettingsRuntimeSession::actionFinished, &q,
-            [this](settings::SettingsActionBinding action, bool success, const QString& error) {
-                Q_UNUSED(error);
+            [this](settings::SettingsActionBinding action, bool success, const QString& message) {
                 if (!q.isVisible() || !success)
                     return;
                 for (const RuntimeItem& item : items) {
@@ -792,6 +791,23 @@ class SettingsPageWidget::Impl {
                     if (definition == nullptr || definition->binding != action ||
                         !definition->successMessage.has_value()) {
                         continue;
+                    }
+                    if (action == settings::SettingsActionBinding::ImportConfiguration &&
+                        !message.isEmpty()) {
+                        auto* modal = new adqt::widgets::AdModal(&q);
+                        modal->setObjectName(
+                            QStringLiteral("settings-configuration-import-result"));
+                        modal->setMode(adqt::widgets::AdModal::Mode::Window);
+                        modal->setOwnerWindow(q.window());
+                        modal->setPreset(adqt::widgets::AdModal::Preset::Success);
+                        modal->setWindowTitle(definition->successMessage->translated());
+                        modal->setText(message);
+                        modal->setPreferredWidth(520);
+                        modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok);
+                        QObject::connect(modal, &adqt::widgets::AdModal::finished, modal,
+                                         &QObject::deleteLater);
+                        modal->setOpen(true);
+                        return;
                     }
                     adqt::widgets::AdMessage::Request request;
                     request.key =

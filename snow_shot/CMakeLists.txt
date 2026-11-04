@@ -3431,6 +3431,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-settings-page-loading-tests
         COMMAND snow-shot-settings-page-loading-tests)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_test(NAME snow-shot-linux-configuration-import-tests
+            COMMAND snow-shot-settings-page-loading-tests --linux-configuration-import-only)
+        set_tests_properties(snow-shot-linux-configuration-import-tests PROPERTIES
+            LABELS "unit" TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     add_test(NAME snow-shot-settings-variable-help-tests
         COMMAND snow-shot-settings-page-loading-tests --variable-help-only -platform offscreen)
     set_tests_properties(snow-shot-settings-variable-help-tests PROPERTIES
@@ -3644,6 +3652,18 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_settings
         Qt6::Widgets
     )
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # The settings library's pinned import adapters share these export implementations.
+        foreach(_settings_test snow-shot-settings-page-loading-tests snow-shot-global-mouse-page-tests)
+            target_sources(${_settings_test} PRIVATE
+                include/snow_shot/presentation/screenshotexportcoordinator.h
+                src/presentation/services/screenshotexportartifact.cpp
+                src/presentation/services/screenshotexportcoordinator.cpp
+                src/presentation/services/screenshotimagefileservice.cpp
+                src/presentation/services/screenshotpdfexport.cpp)
+            target_include_directories(${_settings_test} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/image")
+        endforeach()
+    endif()
     add_test(NAME snow-shot-global-mouse-page-tests
              COMMAND snow-shot-global-mouse-page-tests)
     set_tests_properties(snow-shot-global-mouse-page-tests PROPERTIES
@@ -9519,6 +9539,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-mcp-application-fixture-tests PROPERTIES TIMEOUT 120 LABELS unit
             ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_test(NAME snow-shot-linux-mcp-configuration-import-tests
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_application_fixture_tests.py"
+                    "$<TARGET_FILE:snow_shot_mcp>" "$<TARGET_FILE:snow_shot>"
+                    --linux-configuration-import-only)
+            set_tests_properties(snow-shot-linux-mcp-configuration-import-tests PROPERTIES
+                TIMEOUT 90 LABELS unit ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+        endif()
     endif()
     add_test(NAME snow-shot-mcp-history-transient-tests
         COMMAND snow-shot-screenshot-history-tests --mcp-transient-only -platform offscreen)

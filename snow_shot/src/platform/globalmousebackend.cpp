@@ -12,17 +12,13 @@ std::unique_ptr<GlobalMouseBackend> createMacOSGlobalMouseBackend();
 namespace {
 class UnsupportedGlobalMouseBackend final : public GlobalMouseBackend {
   public:
-    void start(Handler, FailureHandler failure) override {
-        if (failure) {
-            failure(0);
-        }
-    }
+    void start(Handler, FailureHandler) override {}
     void stop() override {}
     void configure(const GlobalMouseConfiguration&) override {}
     void cancel(quint64) override {}
     void beginButtonDrag(settings::SettingsGlobalMouseAction) override {}
     GlobalMousePermissionState permissionState() const override {
-        return {GlobalMousePermissionState::Status::Unavailable};
+        return {GlobalMousePermissionState::Status::Unsupported};
     }
 };
 } // namespace

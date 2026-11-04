@@ -24,6 +24,7 @@
 #include "widgets/checkbox.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/configurationarchive.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
@@ -1894,6 +1895,99 @@ void catalogResetsPreserveOtherSections(settings::SettingsRuntimeSession& sessio
                     "a section reset restores its defaults and preserves neighboring sections");
     }
 }
+
+#ifdef Q_OS_LINUX
+void linuxConfigurationImportReportsPreservedSettings(const settings::SettingsRegistry& registry,
+                                                      settings::SettingsRuntimeSession& session,
+                                                      settings::BuiltInSettingsBackend& backend,
+                                                      const QTemporaryDir& temporary) {
+    namespace storage = snow_shot::storage;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const QString portable = QStringLiteral("drawing/remember_last_used_tool");
+    const QMap<QString, QJsonValue> local{
+        {QStringLiteral("screenshot/image_save_directory"), QStringLiteral("/local/screenshots")},
+        {QStringLiteral("interface/skin_path"), QStringLiteral("/local/skin.png")},
+        {QStringLiteral("tray/custom_icon"), QStringLiteral("/local/icon.png")},
+        {QStringLiteral("system/auto_start_at_boot"), true},
+        {QStringLiteral("system/launch_as_administrator"), false},
+        {QStringLiteral("system/application_priority"), QStringLiteral("normal")},
+        {portable, false}};
+    require(configuration.setValues(local), "prepare Linux configuration import baseline");
+    auto foreign = configuration.snapshot();
+    foreign.insert(QStringLiteral("interface/skin_path"), QStringLiteral("C:/skin.png"));
+    foreign.insert(QStringLiteral("tray/custom_icon"), QStringLiteral("C:/tray.ico"));
+    foreign.insert(QStringLiteral("system/auto_start_at_boot"), false);
+    foreign.insert(QStringLiteral("system/launch_as_administrator"), true);
+    foreign.insert(QStringLiteral("system/application_priority"), QStringLiteral("high"));
+    foreign.insert(portable, true);
+    const QString path = temporary.filePath(QStringLiteral("windows-import.zip"));
+    require(storage::ConfigurationArchive::write(
+                path, foreign, storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "prepare Windows-style configuration archive");
+    SettingsPageWidget page(registry, QStringLiteral("files-history"), session);
+    page.resize(900, 720);
+    page.show();
+    page.reveal({QStringLiteral("files-history"), QStringLiteral("storage-status"),
+                 QStringLiteral("configuration.import")});
+    drainEvents();
+    bool succeeded = false;
+    QString detail;
+    QObject::connect(
+        &backend, &settings::SettingsBackend::actionFinished, &page,
+        [&](settings::SettingsActionBinding action, bool success, const QString& text) {
+            if (action == settings::SettingsActionBinding::ImportConfiguration) {
+                succeeded = success;
+                detail = text;
+            }
+        });
+    require(backend.triggerAction(settings::SettingsActionBinding::ImportConfiguration, path),
+            "start Windows configuration import");
+    drainEvents();
+    require(succeeded && detail.contains(QStringLiteral("save directories")) &&
+                detail.contains(QStringLiteral("skin image paths")) &&
+                detail.contains(QStringLiteral("Custom tray icon paths")) &&
+                detail.contains(QStringLiteral("save path shortcuts")) &&
+                detail.contains(QStringLiteral("application priority")),
+            "a successful import must describe all preserved categories");
+    for (auto it = local.cbegin(); it != local.cend(); ++it) {
+        if (it.key() != portable)
+            require(configuration.value(it.key()) == it.value(),
+                    "the real import must retain local paths and system settings");
+    }
+    require(configuration.value(portable).toBool(),
+            "the real import must apply portable Windows preferences");
+    auto* modal = page.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("settings-configuration-import-result"));
+    require(modal != nullptr && modal->isOpen() && modal->text() == detail,
+            "the settings page must show the preserved settings until dismissed");
+    modal->accept();
+    drainEvents();
+    require(
+        snow_shot::presentation::LanguageManager::instance().setLanguage(QStringLiteral("zh_CN")),
+        "select Simplified Chinese for the import result");
+    foreign.insert(QStringLiteral("interface/language"), QStringLiteral("zh_CN"));
+    require(storage::ConfigurationArchive::write(
+                path, foreign, storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "prepare a localized Windows-style configuration archive");
+    succeeded = false;
+    detail.clear();
+    require(backend.triggerAction(settings::SettingsActionBinding::ImportConfiguration, path),
+            "start the localized configuration import");
+    drainEvents();
+    require(succeeded && detail.contains(QStringLiteral("截图和录屏保存目录")) &&
+                detail.contains(QStringLiteral("自定义托盘图标路径")) &&
+                detail.contains(QStringLiteral("保存路径快捷方式")),
+            "the preserved settings must be explained in Simplified Chinese");
+    modal = page.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("settings-configuration-import-result"));
+    require(modal != nullptr && modal->isOpen() && modal->text() == detail,
+            "the localized import explanation must remain visible");
+    modal->accept();
+    drainEvents();
+}
+#endif
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1918,6 +2012,13 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+#ifdef Q_OS_LINUX
+    if (application.arguments().contains(QStringLiteral("--linux-configuration-import-only"))) {
+        linuxConfigurationImportReportsPreservedSettings(registry, session, backend, temporary);
+        storage.shutdown();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--pinned-shake-only"))) {
         using Binding = settings::SettingsSwitchBinding;
         using Reset = settings::SettingsSectionReset;

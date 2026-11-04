@@ -1083,6 +1083,9 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                     [&] {
                         const auto current = configuration().snapshot();
                         read.preserveOmittedDirectories(current);
+#ifdef Q_OS_LINUX
+                        read.preserveLinuxLocalSettings(current);
+#endif
                         read.preserveOmittedCredentials(current);
                         return ports.settings->importConfigurationSnapshot(
                             read.values, read.schemaVersion, &runtimeCompletion);
@@ -1095,25 +1098,33 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                     auto* runtimeWatcher = new QFutureWatcher<storage::StorageResult>(&q);
                     QObject::connect(
                         runtimeWatcher, &QFutureWatcher<storage::StorageResult>::finished, &q,
-                        [this, runtimeWatcher, id, ok] {
+                        [this, runtimeWatcher, id, ok, skipped = read.skippedLocalSettings] {
                             const auto result = runtimeWatcher->result();
                             runtimeWatcher->deleteLater();
                             --admittedWork;
                             if (stopping)
                                 return;
-                            if (ok && result.success)
-                                ports.jobs->complete(
-                                    id, {{QStringLiteral("revision"),
-                                          static_cast<qint64>(configuration().revision())}});
-                            else
+                            if (ok && result.success) {
+                                QJsonObject output{
+                                    {QStringLiteral("revision"),
+                                     static_cast<qint64>(configuration().revision())}};
+                                if (!skipped.isEmpty())
+                                    output.insert(QStringLiteral("skipped_local_settings"),
+                                                  QJsonArray::fromStringList(skipped));
+                                ports.jobs->complete(id, output);
+                            } else
                                 ports.jobs->fail(id, QStringLiteral("storage_failed"));
                         });
                     runtimeWatcher->setFuture(runMcpWork(
                         &workers, [runtimeCompletion] { return runtimeCompletion.get(); }));
-                } else if (ok)
-                    ports.jobs->complete(id, {{QStringLiteral("revision"),
-                                               static_cast<qint64>(configuration().revision())}});
-                else
+                } else if (ok) {
+                    QJsonObject output{{QStringLiteral("revision"),
+                                        static_cast<qint64>(configuration().revision())}};
+                    if (!read.skippedLocalSettings.isEmpty())
+                        output.insert(QStringLiteral("skipped_local_settings"),
+                                      QJsonArray::fromStringList(read.skippedLocalSettings));
+                    ports.jobs->complete(id, output);
+                } else
                     ports.jobs->fail(id, conflict ? QStringLiteral("stale_revision")
                                                   : QStringLiteral("storage_failed"));
             });

@@ -364,6 +364,24 @@ void ConfigurationArchiveReadResult::preserveOmittedDirectories(
     }
 }
 
+void ConfigurationArchiveReadResult::preserveLinuxLocalSettings(
+    const QMap<QString, QJsonValue>& current) {
+    skippedLocalSettings = configArchiveLocalDirectoryKeys();
+    skippedLocalSettings.append(
+        {QStringLiteral("interface/skin_path"), QStringLiteral("interface/toolbar_skin_path"),
+         QStringLiteral("interface/tray_menu_skin_path"), QStringLiteral("tray/custom_icon"),
+         QStringLiteral("tray/dark_custom_icon"), QStringLiteral("screenshot/save_path_shortcuts"),
+         QStringLiteral("system/auto_start_at_boot"),
+         QStringLiteral("system/launch_as_administrator"),
+         QStringLiteral("system/application_priority")});
+    for (const auto& key : skippedLocalSettings) {
+        if (current.contains(key))
+            values.insert(key, current.value(key));
+        else
+            values.remove(key);
+    }
+}
+
 void ConfigurationArchiveReadResult::preserveOmittedCredentials(
     const QMap<QString, QJsonValue>& current) {
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION

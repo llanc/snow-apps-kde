@@ -304,6 +304,8 @@ QString globalMousePermissionMessage(const GlobalMousePermissionState& state) {
     case Status::Unavailable:
         return GlobalMouseManager::tr(
             "Global mouse input is unavailable. Check permissions and retry");
+    case Status::Unsupported:
+        return GlobalMouseManager::tr("Global mouse gestures are not supported on this platform");
     case Status::Suspended:
         return GlobalMouseManager::tr(
             "Global mouse gestures are paused while this session is inactive");

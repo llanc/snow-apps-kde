@@ -31,7 +31,7 @@ void require(bool condition, const char* message) {
     }
 }
 
-void writeZip(const QString& path, const QMap<QString, QByteArray>& entries) {
+void writeZip(const QString& path, const QMap<QString, QByteArray>& entries, bool windows = false) {
     void* writer = mz_zip_writer_create();
     require(writer != nullptr, "test zip writer could not be created");
     require(mz_zip_writer_open_file(writer, snow_shot::platform::minizipPath(path).constData(), 0,
@@ -42,6 +42,10 @@ void writeZip(const QString& path, const QMap<QString, QByteArray>& entries) {
         mz_zip_file info{};
         info.filename = name.constData();
         info.compression_method = MZ_COMPRESS_METHOD_DEFLATE;
+        if (windows) {
+            info.version_madeby = (MZ_HOST_SYSTEM_WINDOWS_NTFS << 8) | 20;
+            info.external_fa = 0x20;
+        }
         require(mz_zip_writer_add_buffer(writer, const_cast<char*>(it.value().constData()),
                                          static_cast<int32_t>(it.value().size()), &info) == MZ_OK,
                 "test zip entry could not be written");
@@ -227,6 +231,92 @@ void importsPreserveOmittedDirectories(const QTemporaryDir& temporary) {
                 "explicit legacy directories, including empty values, must override local ones");
         }
     }
+}
+
+void linuxImportKeepsLocalPathsAndRuntimeSettings(const QTemporaryDir& temporary) {
+    const QString image = QStringLiteral("screenshot/image_save_directory");
+    const QString video = QStringLiteral("screen_recording/video_save_directory");
+    const QString manual = QStringLiteral("screenshot/last_manual_save_directory");
+    const QString skin = QStringLiteral("interface/skin_path");
+    const QString toolbar = QStringLiteral("interface/toolbar_skin_path");
+    const QString tray = QStringLiteral("interface/tray_menu_skin_path");
+    const QString icon = QStringLiteral("tray/custom_icon");
+    const QString darkIcon = QStringLiteral("tray/dark_custom_icon");
+    const QString shortcuts = QStringLiteral("screenshot/save_path_shortcuts");
+    const QString startup = QStringLiteral("system/auto_start_at_boot");
+    const QString administrator = QStringLiteral("system/launch_as_administrator");
+    const QString priority = QStringLiteral("system/application_priority");
+    const QString portable = QStringLiteral("drawing/remember_last_used_tool");
+    const QMap<QString, QJsonValue> local{
+        {image, QStringLiteral("/local/images")},
+        {video, QStringLiteral("/local/videos")},
+        {manual, QStringLiteral("/local/manual")},
+        {skin, QStringLiteral("/local/main.png")},
+        {toolbar, QStringLiteral("/local/toolbar.png")},
+        {tray, QStringLiteral("/local/tray.png")},
+        {icon, QStringLiteral("/local/icon.png")},
+        {darkIcon, QStringLiteral("/local/dark-icon.png")},
+        {shortcuts,
+         QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Local")},
+                                {QStringLiteral("path"), QStringLiteral("/local/images")}}}},
+        {startup, true},
+        {administrator, false},
+        {priority, QStringLiteral("normal")}};
+    const QJsonObject foreign{
+        {image, QStringLiteral("C:/Users/Example/Pictures")},
+        {video, QStringLiteral("C:/Users/Example/Videos")},
+        {manual, QStringLiteral("C:/Users/Example/Desktop")},
+        {skin, QStringLiteral("C:/skins/main.png")},
+        {toolbar, QStringLiteral("C:/skins/toolbar.png")},
+        {tray, QStringLiteral("C:/skins/tray.png")},
+        {icon, QStringLiteral("C:/icons/tray.ico")},
+        {darkIcon, QStringLiteral("C:/icons/dark-tray.ico")},
+        {shortcuts, QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Windows")},
+                                           {QStringLiteral("path"), QStringLiteral("C:/Images")}}}},
+        {startup, false},
+        {administrator, true},
+        {priority, QStringLiteral("high")},
+        {portable, true}};
+    const auto path = temporary.filePath(QStringLiteral("windows-settings.zip"));
+    writeZip(path,
+             {{QStringLiteral("manifest.json"),
+               manifestBytes(storage::ConfigurationStore::currentSchemaVersion())},
+              {QStringLiteral("config.json"), configurationBytes(foreign)}},
+             true);
+    void* reader = mz_zip_reader_create();
+    require(reader != nullptr &&
+                mz_zip_reader_open_file(
+                    reader, snow_shot::platform::minizipPath(path).constData()) == MZ_OK &&
+                mz_zip_reader_goto_first_entry(reader) == MZ_OK,
+            "open the Windows-origin fixture");
+    mz_zip_file* info = nullptr;
+    require(mz_zip_reader_entry_get_info(reader, &info) == MZ_OK && info != nullptr &&
+                MZ_HOST_SYSTEM(info->version_madeby) == MZ_HOST_SYSTEM_WINDOWS_NTFS,
+            "the fixture must carry Windows ZIP metadata");
+    mz_zip_reader_delete(&reader);
+    auto imported = storage::ConfigurationArchive::read(path);
+    require(imported.isValid(), "Windows-origin archives must be readable on Linux");
+    imported.preserveLinuxLocalSettings(local);
+    require(imported.skippedLocalSettings.size() == local.size(),
+            "every preserved setting must be reported");
+    for (auto it = local.cbegin(); it != local.cend(); ++it) {
+        require(imported.values.value(it.key()) == it.value() &&
+                    imported.skippedLocalSettings.contains(it.key()),
+                "Windows paths and platform settings must retain and report the local value");
+    }
+    require(imported.values.value(portable).toBool(),
+            "portable preferences must still be imported");
+    storage::ConfigurationStore store(temporary.filePath(QStringLiteral("linux-import.json")), true,
+                                      true, 60000);
+    require(store.setValues(local) &&
+                store.applySnapshot(imported.values, imported.schemaVersion) &&
+                store.flushNow().success,
+            "portable import must apply and persist");
+    const storage::ConfigurationStore reloaded(
+        temporary.filePath(QStringLiteral("linux-import.json")), true, false);
+    for (auto it = local.cbegin(); it != local.cend(); ++it)
+        require(reloaded.value(it.key()) == it.value(), "local values must survive a restart");
+    require(reloaded.value(portable).toBool(), "the imported preference must survive a restart");
 }
 
 void autoSaveAfterExecutionArchivesMigrateAndRoundTrip(const QTemporaryDir& temporary) {
@@ -811,6 +901,7 @@ int main(int argc, char** argv) {
     roundTripPreservesValuesAndSchemaVersion(temporary);
     exportsOmitLocalDirectories(temporary);
     importsPreserveOmittedDirectories(temporary);
+    linuxImportKeepsLocalPathsAndRuntimeSettings(temporary);
     autoSaveAfterExecutionArchivesMigrateAndRoundTrip(temporary);
     readRejectsInvalidArchives(temporary);
     writeRejectsUnwritableTargets(temporary);

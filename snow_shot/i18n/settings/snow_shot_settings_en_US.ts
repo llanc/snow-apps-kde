@@ -1109,6 +1109,24 @@
             <translation>The setting could not be saved</translation>
         </message>
         <message>
+            <source>These settings were kept on this device:
+
+- Screenshot and recording save directories
+- Last manual save directory
+- Main window, toolbar, and tray skin image paths
+- Custom tray icon paths
+- Screenshot save path shortcuts
+- Startup, administrator launch, and application priority</source>
+            <translation>These settings were kept on this device:
+
+- Screenshot and recording save directories
+- Last manual save directory
+- Main window, toolbar, and tray skin image paths
+- Custom tray icon paths
+- Screenshot save path shortcuts
+- Startup, administrator launch, and application priority</translation>
+        </message>
+        <message>
             <source>Translation service is unavailable</source>
             <translation>Translation service is unavailable</translation>
         </message>
@@ -1914,6 +1932,10 @@
         <message>
             <source>Color picker display mode</source>
             <translation>Color picker display mode</translation>
+        </message>
+        <message>
+            <source>Compatible settings will be imported. Local paths and platform-specific settings will be kept. Some changes take effect after the app restarts</source>
+            <translation>Compatible settings will be imported. Local paths and platform-specific settings will be kept. Some changes take effect after the app restarts</translation>
         </message>
         <message>
             <source>Compression level</source>
@@ -5550,6 +5572,10 @@ Unavailable: %2</translation>
         <message>
             <source>Checking global mouse permissions...</source>
             <translation>Checking global mouse permissions...</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are not supported on this platform</source>
+            <translation>Global mouse gestures are not supported on this platform</translation>
         </message>
         <message>
             <source>Global mouse gestures are paused while this session is inactive</source>

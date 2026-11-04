@@ -81,6 +81,7 @@ struct GlobalMousePermissionState {
         ListenRequired,
         AccessibilityRequired,
         Unavailable,
+        Unsupported,
         Suspended
     };
     Status status = Status::Unknown;

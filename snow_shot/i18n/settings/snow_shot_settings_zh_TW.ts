@@ -1109,6 +1109,24 @@
             <translation>設定無法儲存</translation>
         </message>
         <message>
+            <source>These settings were kept on this device:
+
+- Screenshot and recording save directories
+- Last manual save directory
+- Main window, toolbar, and tray skin image paths
+- Custom tray icon paths
+- Screenshot save path shortcuts
+- Startup, administrator launch, and application priority</source>
+            <translation>以下設定已保留本機原有值：
+
+- 螢幕截圖和錄影儲存目錄
+- 上次手動儲存目錄
+- 主視窗、工具列和系統匣外觀圖片路徑
+- 自訂系統匣圖示路徑
+- 螢幕截圖儲存路徑捷徑
+- 開機啟動、管理員啟動和應用程式優先順序</translation>
+        </message>
+        <message>
             <source>Translation service is unavailable</source>
             <translation>翻譯服務無法使用</translation>
         </message>
@@ -1914,6 +1932,10 @@
         <message>
             <source>Color picker display mode</source>
             <translation>色彩選擇器顯示模式</translation>
+        </message>
+        <message>
+            <source>Compatible settings will be imported. Local paths and platform-specific settings will be kept. Some changes take effect after the app restarts</source>
+            <translation>將匯入相容的設定。本機路徑和平台相關設定將保留，部分變更將在重新啟動應用程式後生效</translation>
         </message>
         <message>
             <source>Compression level</source>
@@ -5550,6 +5572,10 @@ Unavailable: %2</source>
         <message>
             <source>Checking global mouse permissions...</source>
             <translation>正在檢查全域滑鼠權限…</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are not supported on this platform</source>
+            <translation>目前平台不支援全域滑鼠手勢</translation>
         </message>
         <message>
             <source>Global mouse gestures are paused while this session is inactive</source>

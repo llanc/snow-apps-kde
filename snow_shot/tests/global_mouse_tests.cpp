@@ -769,6 +769,30 @@ void managerPermissionCallbacksAreRestartSafe() {
     storage.shutdown();
 }
 
+#ifdef Q_OS_LINUX
+void unsupportedBackendDoesNotReportStartupFailure() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.filePath(QStringLiteral("bin")), temporary.path()})
+                    .success,
+            "initialize isolated storage for the unsupported backend");
+    GlobalMouseManager manager(createGlobalMouseBackend());
+    int failures = 0;
+    QObject::connect(&manager, &GlobalMouseManager::operationFailed, &manager,
+                     [&](const QString&) { ++failures; });
+    manager.initialize();
+    QCoreApplication::processEvents();
+    const auto state = manager.permissionState();
+    require(state.status == GlobalMousePermissionState::Status::Unsupported && failures == 0,
+            "unsupported global mouse gestures must not cause a startup failure");
+    require(globalMousePermissionMessage(state).contains(QStringLiteral("not supported")),
+            "the unsupported state must explain why global mouse gestures are unavailable");
+    manager.shutdown();
+    storage.shutdown();
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -791,6 +815,9 @@ int main(int argc, char** argv) {
         require(false, "native smoke test is unsupported on this platform");
 #endif
     }
+#ifdef Q_OS_LINUX
+    unsupportedBackendDoesNotReportStartupFailure();
+#endif
     managerPermissionCallbacksAreRestartSafe();
     everyCombinationMatchesExactlyAndLatchesItsAction();
 #ifdef Q_OS_WIN
