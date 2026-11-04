@@ -9,7 +9,22 @@
 #include <QMetaObject>
 #include <QTimer>
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
+
+namespace {
+bool isFullDisplayImage(const QSize& image, const QSize& logical) {
+    if (!image.isValid() || !logical.isValid() || image.isEmpty() || logical.isEmpty())
+        return false;
+    const double scaleX = double(image.width()) / double(logical.width());
+    const double scaleY = double(image.height()) / double(logical.height());
+    // Qt may round the Wayland screen DPR up to an integer while the portal
+    // captures the compositor's fractional output scale. Allow uniform scaling,
+    // but reject images that do not have the full display's aspect ratio.
+    return std::abs(scaleX - scaleY) <= std::max(scaleX, scaleY) * 0.005;
+}
+} // namespace
 
 ScreenshotCaptureWorker::~ScreenshotCaptureWorker() = default;
 
@@ -40,7 +55,7 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     ScreenshotCaptureResult result;
     result.requestId = request.requestId;
     result.purpose = request.purpose;
-    if (screen == nullptr || !screen->physicalRect.isValid() ||
+    if (screen == nullptr || !screen->physicalRect.isValid() || !screen->logicalRect.isValid() ||
         request.purpose != ScreenshotCapturePurpose::Initial ||
         (cancelled != nullptr && cancelled->load(std::memory_order_relaxed))) {
         qWarning("Linux portal capture requires one screen and an initial capture request");
@@ -85,13 +100,13 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     }
 
     QImageReader reader(imageUri.toLocalFile());
-    if (reader.size() != screen->physicalRect.size()) {
+    if (!isFullDisplayImage(reader.size(), screen->logicalRect.size())) {
         qWarning("Portal screenshot dimensions do not match the selected display");
         postCaptureResult(coordinator, std::move(result));
         return;
     }
     QImage image = reader.read();
-    if (image.isNull() || image.size() != screen->physicalRect.size()) {
+    if (image.isNull() || !isFullDisplayImage(image.size(), screen->logicalRect.size())) {
         qWarning("Could not read the desktop portal screenshot");
         postCaptureResult(coordinator, std::move(result));
         return;
@@ -100,8 +115,10 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     CapturedDisplayModel display;
     display.name = screen->name;
     display.stableId = QStringLiteral("linux:") + screen->name;
-    display.physicalRect = screen->physicalRect;
+    display.physicalRect = QRect(screen->physicalRect.topLeft(), image.size());
     display.canvasRect = display.physicalRect;
+    display.capturedLogicalRect = screen->logicalRect;
+    display.backend = ScreenshotCaptureBackend::DesktopPortal;
     display.primary = true;
     display.active = true;
 

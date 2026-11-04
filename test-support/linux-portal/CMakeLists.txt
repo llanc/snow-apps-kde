@@ -46,6 +46,12 @@ add_executable(snow-shot-linux-update-tests
 target_include_directories(snow-shot-linux-update-tests PRIVATE ../../snow_shot/include)
 target_link_libraries(snow-shot-linux-update-tests PRIVATE Qt6::Core)
 snow_apply_strict_warnings(snow-shot-linux-update-tests)
+add_executable(snow-shot-linux-autostart-tests
+    ../../snow_shot/src/platform/linux/autostartregistration.cpp
+    ../../snow_shot/tests/linux_autostart_registration_tests.cpp)
+target_include_directories(snow-shot-linux-autostart-tests PRIVATE ../../snow_shot/include)
+target_link_libraries(snow-shot-linux-autostart-tests PRIVATE Qt6::Core)
+snow_apply_strict_warnings(snow-shot-linux-autostart-tests)
 add_executable(snow-shot-linux-fake-portal
     ../../snow_shot/tests/linux_fake_screenshot_portal.cpp)
 target_link_libraries(snow-shot-linux-fake-portal PRIVATE Qt6::Core Qt6::DBus Qt6::Gui)
@@ -64,3 +70,6 @@ add_test(NAME snow-shot-linux-shortcut-tests
 set_tests_properties(snow-shot-linux-shortcut-tests PROPERTIES TIMEOUT 30 LABELS unit)
 add_test(NAME snow-shot-linux-update-tests COMMAND snow-shot-linux-update-tests)
 set_tests_properties(snow-shot-linux-update-tests PROPERTIES TIMEOUT 30 LABELS unit)
+add_test(NAME snow-shot-linux-autostart-tests
+    COMMAND "${DBUS_RUN_SESSION}" -- $<TARGET_FILE:snow-shot-linux-autostart-tests>)
+set_tests_properties(snow-shot-linux-autostart-tests PROPERTIES TIMEOUT 30 LABELS unit)

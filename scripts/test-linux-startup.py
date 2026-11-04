@@ -2,6 +2,7 @@
 """Run the Linux executable with isolated state and a private D-Bus session."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -31,6 +32,11 @@ def main():
             key = "XDG_RUNTIME_DIR" if kind == "RUNTIME" else f"XDG_{kind}_HOME"
             env[key] = str(directory)
         env.update(TMPDIR=str(root), QT_QPA_PLATFORM="offscreen", XDG_CURRENT_DESKTOP="TEST")
+        config = root / "data/SnowShot/snow_shot-e2e-linuxsmoke/config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"storage": {"schema_version": 4},
+                                      "system": {"auto_start_at_boot": True}}), encoding="utf-8")
+        autostart = root / "config/autostart/io.github.llanc.SnowShotKDE.desktop"
 
         probe = subprocess.run(
             ["dbus-run-session", "--", str(executable), "--update-probe", match.group(1)],
@@ -57,7 +63,7 @@ def main():
                             break
                     except OSError:
                         continue
-                if ready:
+                if ready and autostart.is_file():
                     break
                 time.sleep(0.1)
         finally:
@@ -66,6 +72,8 @@ def main():
             output, _ = process.communicate(timeout=10)
         if not ready:
             raise RuntimeError(f"Normal startup did not reach application.ready:\n{output}")
+        if not autostart.is_file() or " --autostart\n" not in autostart.read_text(encoding="utf-8"):
+            raise RuntimeError("Enabled automatic startup was not registered")
         logs = "\n".join(log.read_text(encoding="utf-8", errors="replace")
                          for log in root.rglob("*.log"))
         if "Global mouse input initialization failed" in output + logs:

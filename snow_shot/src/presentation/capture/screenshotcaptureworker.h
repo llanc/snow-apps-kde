@@ -17,6 +17,7 @@ class ScreenshotCaptureCoordinator;
 struct ScreenshotCaptureScreen {
     QString name;
     QRect physicalRect;
+    QRect logicalRect;
 };
 
 class ScreenshotCaptureWorker final : public QObject {

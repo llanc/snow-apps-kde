@@ -14,6 +14,9 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#ifdef Q_OS_LINUX
+#include "snow_shot/platform/linux/autostartregistration.h"
+#endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/app/distribution.h"
 #include "snow_shot/platform/windows/shellcontextmenuregistration.h"
@@ -748,6 +751,11 @@ int main(int argc, char* argv[]) {
                 ? snow_shot::platform::macos::loginItemService().initialize(
                       startupSettings.autoStartAtBoot())
                 : snow_shot::platform::macos::LoginItemResult{};
+#elif defined(Q_OS_LINUX)
+        const auto startupResult =
+            snow_shot::platform::linux_desktop::AutostartRegistration::reconcile(
+                startupSettings.autoStartAtBoot(), QCoreApplication::applicationFilePath(),
+                snow_shot::platform::linux_desktop::AutostartRegistration::configHome());
 #else
         const auto startupResult = snow_shot::platform::windows::reconcileStartupMode(
             !startupSettings.autoStartAtBoot() ? snow_shot::platform::windows::StartupMode::Off

@@ -95,7 +95,8 @@ void ScreenshotCaptureCoordinator::captureAsync(const ScreenshotCaptureRequest& 
             screen = ScreenshotCaptureScreen{
                 qtScreen->name(),
                 QRect(geometry.topLeft(),
-                      QSize(qRound(geometry.width() * scale), qRound(geometry.height() * scale)))};
+                      QSize(qRound(geometry.width() * scale), qRound(geometry.height() * scale))),
+                geometry};
         }
     }
 #endif

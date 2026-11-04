@@ -2,6 +2,7 @@
 #include "screenshotcaptureworker.h"
 #include "snow_shot/platform/windowcaptureexclusion.h"
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
+#include "snow_shot/presentation/screenshotstartupcontext.h"
 #include "presentation/pinned/livewindownative_p.h"
 #include "waylandoverlay.h"
 
@@ -220,7 +221,8 @@ int main(int argc, char** argv) {
             [&](ScreenshotCaptureResult result) { results.push_back(std::move(result)); });
         ScreenshotCaptureRequest request;
         request.requestId = 42;
-        const ScreenshotCaptureScreen screen{QStringLiteral("test-screen"), QRect(0, 0, 40, 30)};
+        const ScreenshotCaptureScreen screen{QStringLiteral("test-screen"), QRect(0, 0, 40, 30),
+                                             QRect(0, 0, 40, 30)};
         std::atomic_bool cancelled = false;
         worker.capture(request, &coordinator, nullptr, &screen, &cancelled);
         QCoreApplication::processEvents();
@@ -234,22 +236,46 @@ int main(int argc, char** argv) {
                     layouts.first().displays.first().physicalRect == screen.physicalRect,
                 "portal layout must match its image");
 
-        const ScreenshotCaptureScreen wrongSize{QStringLiteral("test-screen"), QRect(0, 0, 41, 30)};
+        const ScreenshotCaptureScreen scaled{QStringLiteral("test-screen"), QRect(0, 0, 80, 60),
+                                             QRect(0, 0, 32, 24)};
+        worker.capture(request, &coordinator, nullptr, &scaled, &cancelled);
+        QCoreApplication::processEvents();
+        require(results.size() == 2 && results.last().succeeded && layouts.size() == 2 &&
+                    results.last().displays.first().physicalRect == QRect(0, 0, 40, 30) &&
+                    layouts.last().displays.first().capturedLogicalRect == scaled.logicalRect &&
+                    layouts.last().displays.first().backend ==
+                        ScreenshotCaptureBackend::DesktopPortal,
+                "a uniformly scaled portal frame must use its actual pixel dimensions");
+        CapturedDisplayModel qt;
+        qt.name = scaled.name;
+        qt.logicalRect = scaled.logicalRect;
+        qt.physicalRect = scaled.physicalRect;
+        qt.logicalToPhysicalScale = 2.5;
+        const auto binding =
+            matchStartupDisplays(QVector{qt}, QVector<qsizetype>{0}, layouts.last().displays,
+                                 [](const CapturedDisplayModel&) { return true; });
+        require(binding && binding->first().display.logicalRect == scaled.logicalRect &&
+                    binding->first().display.physicalRect.size() == image.size() &&
+                    binding->first().display.logicalToPhysicalScale == 0.0,
+                "portal startup must map between image pixels and logical screen bounds");
+
+        const ScreenshotCaptureScreen wrongSize{QStringLiteral("test-screen"), QRect(0, 0, 41, 30),
+                                                QRect(0, 0, 41, 30)};
         worker.capture(request, &coordinator, nullptr, &wrongSize, &cancelled);
         QCoreApplication::processEvents();
-        require(results.size() == 2 && !results.last().succeeded && layouts.size() == 1,
+        require(results.size() == 3 && !results.last().succeeded && layouts.size() == 2,
                 "mismatched screenshot dimensions must be rejected");
 
         worker.capture(request, &coordinator, nullptr, nullptr, &cancelled);
         QCoreApplication::processEvents();
-        require(results.size() == 3 && !results.last().succeeded,
+        require(results.size() == 4 && !results.last().succeeded,
                 "missing or multiple screens must be rejected");
 
         fake.replyImmediately = false;
         QTimer::singleShot(10, [&] { cancelled.store(true, std::memory_order_relaxed); });
         worker.capture(request, &coordinator, nullptr, &screen, &cancelled);
         QCoreApplication::processEvents();
-        require(results.size() == 4 && !results.last().succeeded && layouts.size() == 1,
+        require(results.size() == 5 && !results.last().succeeded && layouts.size() == 2,
                 "cancelling a pending capture must not publish an image");
     }
     return 0;

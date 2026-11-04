@@ -138,12 +138,24 @@
     <context>
         <name>AutoStartRegistration</name>
         <message>
+            <source>Could not save automatic startup settings</source>
+            <translation>Could not save automatic startup settings</translation>
+        </message>
+        <message>
+            <source>Could not update the automatic startup entry</source>
+            <translation>Could not update the automatic startup entry</translation>
+        </message>
+        <message>
             <source>Enable Snow Shot in Windows Settings &gt; Apps &gt; Startup</source>
             <translation>Enable Snow Shot in Windows Settings &gt; Apps &gt; Startup</translation>
         </message>
         <message>
             <source>Startup is managed by your organization</source>
             <translation>Startup is managed by your organization</translation>
+        </message>
+        <message>
+            <source>The existing automatic startup entry is not managed by Snow Shot</source>
+            <translation>The existing automatic startup entry is not managed by Snow Shot</translation>
         </message>
         <message>
             <source>Windows startup settings are unavailable</source>

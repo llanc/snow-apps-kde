@@ -44,6 +44,7 @@
 #include <QEnterEvent>
 #include <QHoverEvent>
 #include <QListView>
+#include <QLineF>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
@@ -219,6 +220,42 @@ void overlayMouseMovesUpdateThePicker() {
     }
     storage.shutdown();
 }
+
+#ifdef Q_OS_LINUX
+void portalPixelsMapToLogicalScreenCoordinates() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "portal geometry test requires an offscreen display");
+    const CapturedDisplayModel qt = ScreenshotGeometryMapper::preCaptureDisplayModel(*screen);
+    CapturedDisplayModel portal;
+    portal.stableId = QStringLiteral("linux:") + qt.name;
+    portal.name = qt.name;
+    portal.physicalRect =
+        QRect(qt.physicalRect.topLeft(),
+              QSize(qRound(qt.logicalRect.width() * 1.25), qRound(qt.logicalRect.height() * 1.25)));
+    portal.capturedLogicalRect = qt.logicalRect;
+    portal.backend = ScreenshotCaptureBackend::DesktopPortal;
+    portal.active = true;
+    const auto binding = matchStartupDisplays(QVector{qt}, QVector<qsizetype>{0}, QVector{portal},
+                                              [](const auto&) { return true; });
+    require(binding.has_value(), "fractionally scaled portal pixels must bind to their screen");
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(binding->first().display);
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    const auto& display = displays.displayAt(0);
+    require(display.logicalRect == qt.logicalRect && display.physicalRect == portal.physicalRect &&
+                geometry.canvasBounds().size() == QSizeF(portal.physicalRect.size()),
+            "the overlay and captured pixels must each retain their own bounds");
+    const QPointF logical = QPointF(qt.logicalRect.topLeft()) + QPointF(100.0, 80.0);
+    const QPointF canvas = geometry.canvasPositionForLogicalPoint(displays, logical);
+    const QPointF expected(100.0 * portal.physicalRect.width() / qt.logicalRect.width(),
+                           80.0 * portal.physicalRect.height() / qt.logicalRect.height());
+    require(QLineF(canvas, expected).length() < 0.01 &&
+                QLineF(geometry.logicalPositionForCanvasPoint(display, canvas), logical).length() <
+                    0.01,
+            "mouse and selection coordinates must round-trip using the portal image scale");
+}
+#endif
 
 class OverlayRevealFixture final {
   public:
@@ -2447,6 +2484,12 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+#ifdef Q_OS_LINUX
+    if (application.arguments().contains(QStringLiteral("--linux-portal-geometry-only"))) {
+        portalPixelsMapToLogicalScreenCoordinates();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--overlay-mouse-picker-only"))) {
         overlayMouseMovesUpdateThePicker();
         return 0;

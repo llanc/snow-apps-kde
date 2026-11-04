@@ -28,6 +28,9 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
+#ifdef Q_OS_LINUX
+#include "snow_shot/platform/linux/autostartregistration.h"
+#endif
 
 #include <QApplication>
 #include <QDir>
@@ -1991,6 +1994,11 @@ void linuxConfigurationImportReportsPreservedSettings(const settings::SettingsRe
 } // namespace
 
 int main(int argc, char** argv) {
+#ifdef Q_OS_LINUX
+    QTemporaryDir isolatedConfig;
+    require(isolatedConfig.isValid(), "isolate Linux desktop settings");
+    qputenv("XDG_CONFIG_HOME", isolatedConfig.path().toUtf8());
+#endif
     QApplication application(argc, argv);
 #ifdef Q_OS_WIN
     const QDir fonts(qEnvironmentVariable("WINDIR") + QStringLiteral("/Fonts"));
@@ -2013,6 +2021,37 @@ int main(int argc, char** argv) {
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
 #ifdef Q_OS_LINUX
+    if (application.arguments().contains(QStringLiteral("--linux-autostart-only"))) {
+        using Binding = settings::SettingsSwitchBinding;
+        using snow_shot::platform::linux_desktop::AutostartRegistration;
+        auto& configuration = storage.configuration();
+        require(configuration.setValue(QStringLiteral("system/auto_start_at_boot"), false) &&
+                    configuration.flushNow().success,
+                "prepare disabled startup preference");
+        const QString entry = AutostartRegistration::entryPath(isolatedConfig.path());
+        require(backend.switchEnabled(Binding::AutoStartAtBoot) &&
+                    !backend.switchValue(Binding::AutoStartAtBoot),
+                "Linux must expose the actual disabled startup switch");
+        require(backend.applySwitchValue(Binding::AutoStartAtBoot, true) &&
+                    backend.switchValue(Binding::AutoStartAtBoot) && QFile::exists(entry) &&
+                    configuration.value(QStringLiteral("system/auto_start_at_boot")).toBool(),
+                "the settings switch must register and persist startup");
+        require(backend.applySwitchValue(Binding::AutoStartAtBoot, false) &&
+                    !backend.switchValue(Binding::AutoStartAtBoot) && !QFile::exists(entry) &&
+                    !configuration.value(QStringLiteral("system/auto_start_at_boot")).toBool(),
+                "disabling startup must remove the registration and persist the preference");
+        QFile foreign(entry);
+        require(foreign.open(QIODevice::WriteOnly) && foreign.write("unmanaged") == 9,
+                "create an unmanaged startup entry");
+        foreign.close();
+        require(!backend.applySwitchValue(Binding::AutoStartAtBoot, true) &&
+                    !configuration.value(QStringLiteral("system/auto_start_at_boot")).toBool() &&
+                    foreign.open(QIODevice::ReadOnly) && foreign.readAll() == "unmanaged",
+                "registration failure must restore the setting and preserve the other entry");
+        foreign.close();
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--linux-configuration-import-only"))) {
         linuxConfigurationImportReportsPreservedSettings(registry, session, backend, temporary);
         storage.shutdown();

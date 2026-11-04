@@ -45,6 +45,7 @@ enum class ScreenshotCaptureBackend {
     WindowsGraphicsCapture = 2,
     Gdi = 3,
     ScreenCaptureKit = 4,
+    DesktopPortal = 5,
 };
 
 enum class ScreenshotCapturePurpose {

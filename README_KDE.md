@@ -51,6 +51,8 @@ scripts/build-linux-kde.sh
 ```
 
 The menu entries continue to work after rebuilding in the same directory.
+Snow Shot's **Launch at login** setting registers the current build with KDE's
+user-level autostart. Disabling that entry in KDE is respected.
 See the [port status and limitations](docs-linux-kde.md) before relying on it.
 The real screenshot portal may request permission; multi-display capture,
 screen recording and several platform-specific features are not yet supported.
@@ -113,7 +115,9 @@ git submodule update --init --recursive
 scripts/build-linux-kde.sh
 ```
 
-在同一目录重新构建后，菜单入口仍可使用。首次截图时桌面门户可能请求授权；
+在同一目录重新构建后，菜单入口仍可使用。Snow Shot 的**登录时启动**设置会将当前
+构建注册到 KDE 用户级自启项；在 KDE 中禁用该自启项后，程序不会自动重新启用。
+首次截图时桌面门户可能请求授权；
 多显示器截图、录屏和部分平台功能尚未支持，详情见 [移植状态与限制](docs-linux-kde.md)。
 
 ### 从 Windows 导入设置

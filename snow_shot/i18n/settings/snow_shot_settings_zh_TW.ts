@@ -138,12 +138,24 @@
     <context>
         <name>AutoStartRegistration</name>
         <message>
+            <source>Could not save automatic startup settings</source>
+            <translation>無法儲存開機自動啟動設定</translation>
+        </message>
+        <message>
+            <source>Could not update the automatic startup entry</source>
+            <translation>無法更新開機自動啟動項目</translation>
+        </message>
+        <message>
             <source>Enable Snow Shot in Windows Settings &gt; Apps &gt; Startup</source>
             <translation>請在 Windows 設定 &gt; 應用程式 &gt; 啟動中啟用 Snow Shot</translation>
         </message>
         <message>
             <source>Startup is managed by your organization</source>
             <translation>啟動設定由您的組織管理</translation>
+        </message>
+        <message>
+            <source>The existing automatic startup entry is not managed by Snow Shot</source>
+            <translation>現有的開機自動啟動項目並非由 Snow Shot 管理</translation>
         </message>
         <message>
             <source>Windows startup settings are unavailable</source>

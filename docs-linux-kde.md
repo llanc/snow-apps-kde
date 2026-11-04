@@ -10,8 +10,9 @@ The real desktop portal's permission flow has not yet been tested. A per-user
 menu installer is available; there is no Linux system package yet.
 
 The in-progress screenshot path uses the XDG desktop screenshot portal and
-requires a single display whose portal image dimensions match Qt's display
-geometry. The portal may ask the user for permission. KDE global shortcuts use
+requires a single display. Portal image pixels are mapped to the display's Qt
+logical coordinates, including when Qt rounds a fractional Wayland scale. The
+portal may ask the user for permission. KDE global shortcuts use
 the `org.kde.kglobalaccel` session service and do not steal conflicting keys.
 Multi-display capture, recapture with window exclusions, smart window/element
 selection, screen recording, global mouse actions, and Linux packaging still need
@@ -20,6 +21,10 @@ disabled on Linux so it cannot install a Windows release. The Rust capture API
 remains unsupported on Linux for its other consumers, including the separate
 direct-capture path. Some viewer actions, including Windows shell integration,
 remain unavailable. The mini edition is not part of this build.
+
+Snow Shot's startup setting manages a user-level XDG autostart entry that starts
+the existing build in the background. It preserves entries disabled in KDE and
+does not replace files it does not manage.
 
 ## Build and run
 

@@ -141,12 +141,23 @@ template <typename QtStillCurrent>
                 return identity.samePhysicalRect(identityOf(qt));
             });
         }
+        if (!identity.usesNativeId && !match.ambiguous && match.index < 0 &&
+            native.backend == ScreenshotCaptureBackend::DesktopPortal && qtDisplays.size() == 1 &&
+            native.name == qtDisplays.first().name && !used.contains(0)) {
+            // A single Qt screen may have no name (for example, offscreen).
+            match.index = 0;
+        }
         if (match.ambiguous || match.index < 0 || native.stableId.isEmpty() ||
             identities.contains(native.stableId)) {
             return std::nullopt;
         }
         const CapturedDisplayModel& qt = qtDisplays.at(match.index);
-        if (native.physicalRect != qt.physicalRect ||
+        const bool portal = native.backend == ScreenshotCaptureBackend::DesktopPortal;
+        if ((!portal && native.physicalRect != qt.physicalRect) ||
+            (portal &&
+             (nativeDisplays.size() != 1 || native.capturedLogicalRect != qt.logicalRect ||
+              native.physicalRect.topLeft() != qt.physicalRect.topLeft() ||
+              !native.physicalRect.isValid() || native.physicalRect.isEmpty())) ||
             (native.canvasUsesPoints && native.capturedLogicalRect != qt.logicalRect) ||
             !qtStillCurrent(qt)) {
             return std::nullopt;
@@ -154,7 +165,7 @@ template <typename QtStillCurrent>
         auto display = native;
         display.screen = qt.screen;
         display.logicalRect = qt.logicalRect;
-        display.logicalToPhysicalScale = qt.logicalToPhysicalScale;
+        display.logicalToPhysicalScale = portal ? 0.0 : qt.logicalToPhysicalScale;
         display.geometryResolved = true;
         bindings.push_back(StartupDisplayBinding{match.index, qtSlots.at(match.index), identity,
                                                  std::move(display)});

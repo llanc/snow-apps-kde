@@ -34,6 +34,10 @@ def main():
     parser.add_argument("fake_portal", type=Path)
     parser.add_argument("--wayland", action="store_true",
                         help="Run against an isolated virtual KWin compositor")
+    parser.add_argument("--portal-size", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"),
+                        help="Set the synthetic portal image size")
+    parser.add_argument("--qt-scale-factor", type=float,
+                        help="Set the Qt screen scale for the application under test")
     parser.add_argument("--kde-shortcut-probe", type=Path,
                         help="Also test KDE shortcuts using this probe executable")
     parser.add_argument("--viewer-probe", type=Path,
@@ -57,6 +61,10 @@ def main():
         parser.error("--kde-shortcut-probe requires --wayland")
     if (picker_probe or picker_host_probe or tray_watcher) and not args.wayland:
         parser.error("--picker-probe, --picker-host-probe and --tray-watcher require --wayland")
+    if args.portal_size and any(value <= 0 for value in args.portal_size):
+        parser.error("--portal-size must be positive")
+    if args.qt_scale_factor is not None and args.qt_scale_factor <= 0:
+        parser.error("--qt-scale-factor must be positive")
     if os.environ.get("SNOW_LINUX_PRIVATE_TEST_BUS") != "1":
         with tempfile.TemporaryDirectory(prefix="snow-shot-linux-bus-") as temporary:
             env = isolated_environment(Path(temporary))
@@ -65,6 +73,10 @@ def main():
                        str(bridge), str(fake_portal)]
             if args.wayland:
                 command.append("--wayland")
+            if args.portal_size:
+                command.extend(["--portal-size", *map(str, args.portal_size)])
+            if args.qt_scale_factor is not None:
+                command.extend(["--qt-scale-factor", str(args.qt_scale_factor)])
             if shortcut_probe:
                 command.extend(["--kde-shortcut-probe", str(shortcut_probe)])
             if viewer_probe:
@@ -137,15 +149,17 @@ def main():
                     readable, _, _ = select.select([watcher.stdout], [], [], 15)
                     if not readable or watcher.stdout.readline().strip() != "ready":
                         raise RuntimeError("The fake status notifier watcher did not start")
+                portal_size = args.portal_size or (800, 600 if args.wayland else 800)
                 portal = subprocess.Popen(
-                    [str(fake_portal), str(root / "synthetic.png"), "800",
-                     "600" if args.wayland else "800"], cwd=root, env=env,
+                    [str(fake_portal), str(root / "synthetic.png"), *map(str, portal_size)], cwd=root, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     start_new_session=True,
                 )
                 readable, _, _ = select.select([portal.stdout], [], [], 15)
                 if not readable or portal.stdout.readline().strip() != "ready":
                     raise RuntimeError("The synthetic screenshot portal did not start")
+                if args.qt_scale_factor is not None:
+                    env["QT_SCALE_FACTOR"] = str(args.qt_scale_factor)
                 if picker_probe:
                     subprocess.run([str(picker_probe), "--embedded-picker-only"], cwd=root,
                                    env=env, check=True, timeout=20)
@@ -154,6 +168,9 @@ def main():
                     subprocess.run([str(picker_host_probe), "--overlay-mouse-picker-only"], cwd=root,
                                    env=env, check=True, timeout=20)
                     print("Wayland screenshot mouse events update the picker")
+                    subprocess.run([str(picker_host_probe), "--linux-portal-geometry-only"], cwd=root,
+                                   env=env, check=True, timeout=20)
+                    print("Portal image pixels map to logical screen coordinates")
                 if viewer_probe:
                     subprocess.run([str(viewer_probe)], cwd=root, env=env, check=True, timeout=20)
                     print("Image viewer opened a synthetic PNG")
@@ -212,6 +229,8 @@ def main():
                     x, y, width, height = state["canvas_bounds"]
                     if not state["active"] or width < 100 or height < 100:
                         raise RuntimeError(f"Invalid screenshot session: {state}")
+                    if (width, height) != tuple(portal_size):
+                        raise RuntimeError(f"Screenshot canvas does not match portal pixels: {state}")
                     selected = client.tool("snow_shot_screenshot_set_selection", {
                         "session_id": session_id, "expected_revision": begun["revision"],
                         "type": "rectangle", "bounds": [x + 10, y + 10, 90, 90],

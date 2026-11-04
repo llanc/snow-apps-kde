@@ -12,6 +12,9 @@
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#ifdef Q_OS_LINUX
+#include "snow_shot/platform/linux/autostartregistration.h"
+#endif
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/loginitemservice.h"
 #include <QGuiApplication>
@@ -233,6 +236,34 @@ applyNativeStartupSettings(bool enabled, bool elevated,
     converted.success = result.success;
     converted.error = result.error;
     return converted;
+#elif defined(Q_OS_LINUX)
+    Q_UNUSED(elevated);
+    Q_UNUSED(loginItems);
+    using platform::linux_desktop::AutostartRegistration;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const bool previous = storage::SystemSettings().autoStartAtBoot();
+    const auto save = [&](bool value) {
+        return configuration.setValue(QStringLiteral("system/auto_start_at_boot"), value) &&
+               configuration.flushNow().success;
+    };
+    const QString saveError = QCoreApplication::translate(
+        "AutoStartRegistration", "Could not save automatic startup settings");
+    if (!save(enabled)) {
+        static_cast<void>(save(previous));
+        return {false, false, saveError};
+    }
+    const auto result = AutostartRegistration::setEnabled(
+        enabled, QCoreApplication::applicationFilePath(), AutostartRegistration::configHome());
+    if (!result.success) {
+        const bool restored = save(previous);
+        return {false, false,
+                restored ? result.error
+                         : result.error +
+                               QCoreApplication::translate(
+                                   "AdministratorLaunch",
+                                   " Settings recovery failed. Retry before closing Snow Shot")};
+    }
+    return {true, false, {}};
 #else
     Q_UNUSED(loginItems);
     using namespace platform::windows;
@@ -1031,6 +1062,9 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     case SettingsSwitchBinding::AutoStartAtBoot:
 #ifdef Q_OS_MACOS
         return m_loginItems->snapshot().requested();
+#elif defined(Q_OS_LINUX)
+        return platform::linux_desktop::AutostartRegistration::isEnabled(
+            platform::linux_desktop::AutostartRegistration::configHome());
 #else
         return app::distribution::isStoreManaged()
                    ? platform::windows::AutoStartRegistration::snapshot().exists
@@ -1186,6 +1220,8 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
 #ifdef Q_OS_MACOS
         return m_loginItems->available() && !m_loginItems->pending();
+#elif defined(Q_OS_LINUX)
+        return !platform::linux_desktop::AutostartRegistration::configHome().isEmpty();
 #else
         return snow_shot::platform::windows::AutoStartRegistration::isSupported() &&
                !platform::windows::administratorOperationPending();

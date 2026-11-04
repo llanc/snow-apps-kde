@@ -136,6 +136,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     snow_find_qt(COMPONENTS DBus)
     link_libraries(Qt6::DBus)
     set(SNOW_SHOT_CAPTURE_WORKER_SOURCE src/platform/linux/screenshotcaptureworker.cpp)
+    add_library(snow_shot_linux_autostart STATIC src/platform/linux/autostartregistration.cpp
+        include/snow_shot/platform/linux/autostartregistration.h)
+    target_include_directories(snow_shot_linux_autostart PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow_shot_linux_autostart PUBLIC Qt6::Core)
     add_library(snow_shot_linux_wayland_overlay STATIC src/platform/linux/waylandoverlay.cpp
         src/platform/linux/waylandoverlay.h)
     target_link_libraries(snow_shot_linux_wayland_overlay PUBLIC Qt6::Widgets)
@@ -1218,6 +1222,9 @@ add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES}
     include/snow_shot/presentation/components/permissionguidewidget.h
     src/presentation/services/permissionguidecontroller.cpp
     src/presentation/components/permissionguidewidget.cpp)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(snow_shot_settings PRIVATE snow_shot_linux_autostart)
+endif()
 if(APPLE)
     target_sources(snow_shot_settings PRIVATE src/platform/macos/permissionguideplatform.mm)
 endif()
@@ -3450,6 +3457,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-settings-page-loading-tests
         COMMAND snow-shot-settings-page-loading-tests)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_test(NAME snow-shot-linux-autostart-settings-tests
+            COMMAND snow-shot-settings-page-loading-tests --linux-autostart-only)
+        set_tests_properties(snow-shot-linux-autostart-settings-tests PROPERTIES
+            LABELS "unit" TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
         add_test(NAME snow-shot-linux-configuration-import-tests
             COMMAND snow-shot-settings-page-loading-tests --linux-configuration-import-only)
         set_tests_properties(snow-shot-linux-configuration-import-tests PROPERTIES
@@ -7772,6 +7785,14 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_test(NAME snow-shot-linux-portal-geometry-tests
+            COMMAND snow-shot-color-picker-lifecycle-tests --linux-portal-geometry-only -platform offscreen)
+        set_tests_properties(snow-shot-linux-portal-geometry-tests PROPERTIES
+            LABELS "unit" TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     add_test(NAME snow-shot-overlay-mouse-picker-tests
         COMMAND snow-shot-color-picker-lifecycle-tests --overlay-mouse-picker-only -platform offscreen)
     set_tests_properties(snow-shot-overlay-mouse-picker-tests PROPERTIES
