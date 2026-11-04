@@ -43,10 +43,17 @@ int macLivePinnedWindowTests();
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#ifdef Q_OS_MACOS
+class ScreenshotPinnedDragExport;
+int macPinnedContentDragTests(
+    const std::function<QImage(const ScreenshotPinnedWindow&)>& readImage,
+    const std::function<ScreenshotPinnedDragExport&(ScreenshotPinnedWindow&)>& readExporter);
+#endif
 #include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/screenshotquicktextannotationtoolbar.h"
 #ifdef Q_OS_WIN
 #include "snow_shot/platform/windows/windowalwaysontop.h"
+#include "../src/platform/windows/localwindowsurfaceowner.h"
 #endif
 #include "snow_shot/presentation/collagedocument.h"
 #include "../src/presentation/collage/collageresourcebudget_p.h"
@@ -1270,6 +1277,13 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static void saveAsFile(ScreenshotPinnedWindow& window) {
         window.saveAsFile();
+    }
+    static bool recognitionSavePending(const ScreenshotPinnedWindow& window) {
+        return window.m_recognitionSavePending;
+    }
+    static void saveRecognition(ScreenshotPinnedWindow& window,
+                                ScreenshotRecognitionFileSnapshot snapshot, QString path) {
+        window.saveRecognitionSnapshot(std::move(snapshot), std::move(path));
     }
 
     static void leaveViewportAtPreviousDpi(ScreenshotPinnedWindow& window, qreal ratio) {
@@ -13102,6 +13116,74 @@ void pinnedAlwaysOnTopOffscreen() {
             waitForUi(20);
             requireStacking(true);
         }
+#ifdef Q_OS_WIN
+        {
+            using Binding = snow_shot::presentation::LocalWindowSurfaceOwnerBinding;
+            constexpr WId nativeSurface = 0x7fffffff;
+            require(QWidget::find(nativeSurface) == nullptr &&
+                        !Binding::ownerForSurface(nativeSurface),
+                    "native ownership fixture starts without a QWidget or registered owner");
+            const auto dispatchNativeSurface = [&] {
+                using namespace snow_shot::platform::windows;
+                const WindowAlwaysOnTopAccess access{[] { return std::optional<QPoint>(QPoint()); },
+                                                     [](const QPoint&) { return nativeSurface; },
+                                                     [](WId id) { return id; },
+                                                     [](WId) { return true; },
+                                                     {},
+                                                     {}};
+                return toggleWindowUnderCursorAlwaysOnTop(
+                    access, &ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface);
+            };
+            {
+                Binding original;
+                original.bind(nativeSurface, &window);
+                original.bind(nativeSurface, &window);
+                require(dispatchNativeSurface() ==
+                            snow_shot::platform::windows::WindowAlwaysOnTopResult::ChangeRequested,
+                        "raw native content routes through its stateful owner without fallback");
+                requireStacking(false);
+                waitForUi(300);
+                require(!lastPersisted.alwaysOnTop,
+                        "raw native content dispatch persists the pin's state");
+                Binding replacement;
+                replacement.bind(nativeSurface, &window);
+                original.reset();
+                require(dispatchNativeSurface() ==
+                            snow_shot::platform::windows::WindowAlwaysOnTopResult::ChangeRequested,
+                        "retiring an old registration preserves the replacement owner");
+                requireStacking(true);
+            }
+            require(!Binding::ownerForSurface(nativeSurface) &&
+                        !ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(nativeSurface),
+                    "scoped retirement releases raw surfaces to unrelated-window routing");
+            {
+                Binding expired;
+                auto owner = std::make_unique<QWidget>();
+                expired.bind(nativeSurface, owner.get());
+                owner.reset();
+                const auto retained = Binding::ownerForSurface(nativeSurface);
+                require(retained && retained->isNull() &&
+                            dispatchNativeSurface() ==
+                                snow_shot::platform::windows::WindowAlwaysOnTopResult::Failed,
+                        "an expired local owner cannot fall through to native state changes");
+            }
+            {
+                ScreenshotPinnedWindow closing;
+                closing.setAttribute(Qt::WA_DeleteOnClose, false);
+                Access::restoreOffscreen(closing, config);
+                closing.show();
+                closing.close();
+                Binding retired;
+                retired.bind(nativeSurface, &closing);
+                require(Access::closing(closing) &&
+                            ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(nativeSurface) ==
+                                false,
+                        "a closing native surface owner rejects further stateful commands");
+            }
+            require(!Binding::ownerForSurface(nativeSurface),
+                    "owner teardown leaves no registration for reused native handles");
+        }
+#endif
         QWidget unrelated;
         require(!ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(unrelated.winId()) &&
                     !ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(0),
@@ -16716,6 +16798,9 @@ void pinnedTablesSaveExcelOffscreen() {
     require(pending, "open a table edit before quick save");
     pending->setPlainText(QStringLiteral("  edited\nvalue  "));
     ScreenshotPinnedWindowTestAccess::quickSave(*window);
+    translation_tests::waitUntil(
+        [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*window); },
+        "recognition quick save finishes asynchronously");
     const auto quickSheet = recognition_workbook_test::sheet(
         recognition_workbook_test::parts(directory.filePath(QStringLiteral("TableResult.xlsx"))));
     require(quickSheet.dimension == QStringLiteral("A1:B2") &&
@@ -16728,6 +16813,9 @@ void pinnedTablesSaveExcelOffscreen() {
                     QStringList{QStringLiteral("TableResult.xlsx")},
             "pinned quick save commits pending edits and exports the complete Excel table");
     ScreenshotPinnedWindowTestAccess::quickSave(*window);
+    translation_tests::waitUntil(
+        [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*window); },
+        "recognition quick save finishes asynchronously");
     require(QFileInfo::exists(directory.filePath(QStringLiteral("TableResult_1.xlsx"))),
             "pinned workbook quick save preserves existing files");
     const bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
@@ -16748,7 +16836,10 @@ void pinnedTablesSaveExcelOffscreen() {
                     inspected = dialog->nameFilters() ==
                                     QStringList{QStringLiteral("Excel workbook (*.xlsx)")} &&
                                 dialog->selectedFiles().value(0).endsWith(QStringLiteral(".xlsx"));
-                    dialog->selectFile(chosen);
+                    dialog->setDirectory(QFileInfo(chosen).absolutePath());
+                    auto* filename = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
+                    require(filename, "Qt recognition save dialog exposes its filename editor");
+                    filename->setText(QFileInfo(chosen).fileName());
                     QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
                 }
             }
@@ -16756,6 +16847,9 @@ void pinnedTablesSaveExcelOffscreen() {
         accept.start();
         ScreenshotPinnedWindowTestAccess::saveAsFile(*window);
         accept.stop();
+        translation_tests::waitUntil(
+            [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*window); },
+            "recognition manual save finishes asynchronously");
         const QString path =
             directory.filePath(QString::fromLatin1(preference) + QStringLiteral(".xlsx"));
         require(
@@ -16801,6 +16895,9 @@ void pinnedTablesSaveExcelOffscreen() {
         {QStringLiteral("unavailable-table"), unavailableImage, QRectF(0, 0, 32, 32)});
     session->activate(ScreenshotRecognitionSessionController::Mode::Table);
     ScreenshotPinnedWindowTestAccess::quickSave(*window);
+    translation_tests::waitUntil(
+        [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*window); },
+        "recognition quick save finishes asynchronously");
     require(QDir(directory.path()).entryList(QDir::Files).size() == 4,
             "an unavailable table must not quick save a screenshot");
     window->close();
@@ -16847,6 +16944,9 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
         require(session && session->conversionModeActive(),
                 "text conversion result must be active for save");
         ScreenshotPinnedWindowTestAccess::quickSave(*window);
+        translation_tests::waitUntil(
+            [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*window); },
+            "recognition quick save finishes asynchronously");
         const QString primary = directory.filePath(QStringLiteral("TextResult.") + extension);
         require(read(primary) == source.toUtf8() &&
                     read(directory.filePath(QStringLiteral("TextResult.txt"))) == source.toUtf8(),
@@ -16868,7 +16968,10 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
             for (QWidget* widget : QApplication::topLevelWidgets()) {
                 if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
                     systemDialogSeen = true;
-                    dialog->selectFile(directory.filePath(QStringLiteral("Manual.txt")));
+                    dialog->setDirectory(directory.path());
+                    auto* filename = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
+                    require(filename, "recognition text save dialog has a filename editor");
+                    filename->setText(QStringLiteral("Manual.txt"));
                     QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
                 }
             }
@@ -16876,6 +16979,9 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
         accept.start();
         ScreenshotPinnedWindowTestAccess::saveAsFile(*window);
         accept.stop();
+        translation_tests::waitUntil(
+            [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*window); },
+            "recognition manual save finishes asynchronously");
         require(systemDialogSeen &&
                     !window->findChild<adqt::widgets::AdModal*>(
                         QStringLiteral("screenshotSaveAsFileModal")) &&
@@ -16900,6 +17006,9 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
     require(session != nullptr, "QR session unavailable");
     session->activate(ScreenshotRecognitionSessionController::Mode::Qr);
     ScreenshotPinnedWindowTestAccess::quickSave(*qrWindow);
+    translation_tests::waitUntil(
+        [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*qrWindow); },
+        "QR quick save finishes asynchronously");
     require(read(directory.filePath(QStringLiteral("TextResult.txt"))) ==
                     QStringLiteral("first\n雪").toUtf8() &&
                 !QFileInfo::exists(directory.filePath(QStringLiteral("TextResult.pdf"))),
@@ -16911,7 +17020,10 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
         for (QWidget* widget : QApplication::topLevelWidgets()) {
             if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
                 qrSystemDialogSeen = true;
-                dialog->selectFile(directory.filePath(QStringLiteral("QRManual.html")));
+                dialog->setDirectory(directory.path());
+                auto* filename = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
+                require(filename, "QR save dialog has a filename editor");
+                filename->setText(QStringLiteral("QRManual.html"));
                 QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
             }
         }
@@ -16919,6 +17031,9 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
     acceptQr.start();
     ScreenshotPinnedWindowTestAccess::saveAsFile(*qrWindow);
     acceptQr.stop();
+    translation_tests::waitUntil(
+        [&] { return !ScreenshotPinnedWindowTestAccess::recognitionSavePending(*qrWindow); },
+        "QR manual save finishes asynchronously");
     require(qrSystemDialogSeen &&
                 read(directory.filePath(QStringLiteral("QRManual.txt"))) ==
                     QStringLiteral("first\n雪").toUtf8() &&
@@ -17050,9 +17165,19 @@ void pinnedDragFileRetention() {
         directory.reset();
         retention.complete(lease, Qt::IgnoreAction);
         lease.reset();
+#ifdef Q_OS_MACOS
+        require(QFileInfo::exists(path) && retention.retainedFileCount() == 1 &&
+                    retention.retainedBytes() == 8,
+                "Cocoa's ambiguous IgnoreAction must preserve published files and budgets");
+        now += Retention::TransferGraceMilliseconds - 1;
+        retention.expire();
+        require(QFileInfo::exists(path), "ambiguous native completion keeps the full grace");
+        ++now;
+        retention.expire();
+#endif
         require(retention.retainedFileCount() == 0 && retention.retainedBytes() == 0 &&
                     !QFileInfo::exists(path),
-                "ignored drags must release their files and both budgets");
+                "ignored drags must eventually release their files and both budgets");
     }
     {
         Retention retention(nullptr, [&] { return now; });
@@ -17110,7 +17235,11 @@ void pinnedDragFileRetention() {
         retention.complete(lease, action);
         directory.reset();
         lease.reset();
-        if (action == Qt::CopyAction) {
+        if (action == Qt::CopyAction
+#ifdef Q_OS_MACOS
+            || action == Qt::IgnoreAction
+#endif
+        ) {
             require(removalAttempts == 0, "accepted files must keep their transfer grace");
             now += Retention::TransferGraceMilliseconds;
             retention.expire();
@@ -17220,6 +17349,10 @@ void pinnedHiddenTextSelectionDragExportOffscreen() {
     config.imageSource.materializedImage.setColorSpace(QColorSpace::SRgb);
     ScreenshotPinnedWindow window;
     auto* session = Access::hiddenSelectionOffscreen(window, config);
+    // Settle the offscreen platform's initial activation/deactivation events before dragging.
+    waitForUi(50);
+    window.activateWindow();
+    waitForUi(20);
     auto* content = window.findChild<ScreenshotRecognitionWindow*>(
         QStringLiteral("screenshotPinnedRecognitionContent"));
     require(content && content->isVisible() && Access::hiddenSelection(window),
@@ -17245,6 +17378,8 @@ void pinnedHiddenTextSelectionDragExportOffscreen() {
                 "ordinary dragging selects hidden text");
     };
     selectText();
+    // Selection can show its floating toolbar and queue activation changes of its own.
+    waitForUi(50);
     const QString selected = Access::displayedRecognition(window).selectedText();
     const auto revision = Access::displayedRecognition(window).selectionRevision();
     const QRect geometry = window.currentNativeGeometry();
@@ -17284,6 +17419,10 @@ void pinnedHiddenTextSelectionDragExportOffscreen() {
         timer.start();
         while (executions == previousExecutions && timer.elapsed() < 10000)
             waitForUi(5);
+        if (executions != previousExecutions + 1)
+            qWarning() << "Hidden selection drag timeout" << "gesture"
+                       << Access::exportGesture(window) << "busy" << exporter.busy() << "active"
+                       << QApplication::activeWindow();
         require(executions == previousExecutions + 1 && !Access::exportGesture(window) &&
                     !exporter.busy(),
                 "Ctrl drag from text or background completes image export and releases ownership");
@@ -17635,8 +17774,13 @@ void pinnedDragExportOffscreen() {
                 completed = true;
             });
         wait([&] { return completed; }, "format drag completes");
+#ifdef Q_OS_MACOS
+        require(QFileInfo::exists(ignoredPath),
+                "Cocoa IgnoreAction must retain the published file for an external receiver");
+#else
         wait([&] { return !QFileInfo::exists(QFileInfo(ignoredPath).absolutePath()); },
              "ignored drops release their files and staging directories");
+#endif
     }
     // Closing/destroying a source during the nested native loop must not destroy
     // the drag object or the published file before the receiver finishes.
@@ -17658,7 +17802,11 @@ void pinnedDragExportOffscreen() {
                 throw std::runtime_error("destroyed source cannot receive completion");
             });
         wait([&] { return destroyedDuringDrag; }, "nested drag source destruction is safe");
-        if (action == Qt::CopyAction)
+        if (action == Qt::CopyAction
+#ifdef Q_OS_MACOS
+            || action == Qt::IgnoreAction
+#endif
+        )
             require(QFileInfo::exists(path), "accepted drop files outlive the source service");
         else
             wait([&] { return !QFileInfo::exists(QFileInfo(path).absolutePath()); },
@@ -27800,6 +27948,16 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--content-drag-native-only"))) {
+            IsolatedPinnedStorage storage;
+            return macPinnedContentDragTests(
+                [](const ScreenshotPinnedWindow& pin) {
+                    return ScreenshotPinnedWindowTestAccess::originalImage(pin);
+                },
+                [](ScreenshotPinnedWindow& pin) -> ScreenshotPinnedDragExport& {
+                    return ScreenshotPinnedWindowTestAccess::dragExport(pin);
+                });
+        }
         if (app.arguments().contains(QStringLiteral("--live-window-native-shell-only"))) {
             IsolatedPinnedStorage storage;
             return macLivePinnedWindowTests();
@@ -27960,6 +28118,8 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--export-snapshot-only"))) {
+            pinnedExportCacheRetainsOnlyCompletedOutput();
+            pinnedRecognitionSerializationIsAsynchronousAndCancellable();
             pinnedSnapshotMemoryMetadataTracksCachedDocument();
             pinnedCapturedPresentationReplacesDonor();
             pinnedAsyncSnapshotsMaterializeAndCancel();
