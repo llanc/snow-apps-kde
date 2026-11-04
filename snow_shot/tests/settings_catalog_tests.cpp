@@ -47,8 +47,8 @@ void pinnedShakeSettingIsDiscoverable() {
                 field->sectionId == QStringLiteral("pin-to-screen-settings") &&
                 field->reset == settings::SettingsSectionReset::PinToScreenBehavior &&
                 field->definition->title.translated() ==
-                    QStringLiteral("Shake a window to hide other windows"),
-            "shake-to-hide must default on in the pinned interaction settings");
+                    QStringLiteral("Shake a window to hide/show other windows"),
+            "shake visibility toggle must default on in the pinned interaction settings");
     const settings::SettingsSearchIndex search(registry);
     for (const QString& query : {QStringLiteral("shake"), QStringLiteral("back and forth")}) {
         const auto results = search.search(query);
@@ -76,10 +76,17 @@ void trayClickActionSettingsRespectPlatformSupport() {
                                    QStringLiteral("show_main_window"),
                                    QStringLiteral("screenshot_copy"),
                                    QStringLiteral("screenshot_fixed"),
+                                   QStringLiteral("open_capture_history"),
+                                   QStringLiteral("open_pin_to_screen_management"),
                                    QStringLiteral("open_function_settings")};
     require(leftSelect.options.size() == actionValues.size() &&
                 leftSelect.options.constFirst().label.translated() == QStringLiteral("None"),
-            "tray left-click action must retain its six options with None first");
+            "tray left-click action must expose eight options with None first");
+    require(leftSelect.options.at(5).label.translated() ==
+                    QStringLiteral("Open Screenshot History") &&
+                leftSelect.options.at(6).label.translated() ==
+                    QStringLiteral("Open Pin to Screen Management"),
+            "tray selectors must name the history and pin management destinations");
     for (qsizetype index = 0; index < actionValues.size(); ++index) {
         require(leftSelect.options.at(index).value == actionValues.at(index),
                 "tray left-click actions must retain their ordered values");
@@ -919,7 +926,7 @@ void builtInCatalogIsCompleteAndValid() {
             captureCursor->title.translated() == QStringLiteral("Show Cursor") &&
             captureCursor->description.translated() ==
                 QStringLiteral(
-                    "Show the captured mouse cursor by default in new normal screenshots.") &&
+                    "Show the captured mouse cursor by default in new normal screenshots") &&
             captureCursor->configurationKey == QStringLiteral("screenshot/capture_cursor") &&
             std::get<settings::SettingsSwitchDefinition>(captureCursor->payload).binding ==
                 settings::SettingsSwitchBinding::ScreenshotShowCursor &&
@@ -1072,7 +1079,7 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotSound->title.translated() ==
                 QStringLiteral("Screenshot Sound Notification") &&
             screenshotSound->description.translated() ==
-                QStringLiteral("Play a shutter sound when screenshot capture starts.") &&
+                QStringLiteral("Play a shutter sound when screenshot capture starts") &&
             screenshotSound->configurationKey ==
                 QStringLiteral("screenshot/screenshot_sound_notification") &&
             std::get<settings::SettingsSwitchDefinition>(screenshotSound->payload).binding ==
@@ -1084,7 +1091,7 @@ void builtInCatalogIsCompleteAndValid() {
             confirmShortcutExit->title.translated() ==
                 QStringLiteral("Confirm before exiting screenshot via shortcut") &&
             confirmShortcutExit->description.translated() ==
-                QStringLiteral("Ask for confirmation when using the Cancel screenshot shortcut.") &&
+                QStringLiteral("Ask for confirmation when using the Cancel screenshot shortcut") &&
             confirmShortcutExit->configurationKey ==
                 QStringLiteral("screenshot/confirm_before_exiting_via_shortcut") &&
             std::get<settings::SettingsSwitchDefinition>(confirmShortcutExit->payload).binding ==
@@ -2073,7 +2080,7 @@ void builtInCatalogIsCompleteAndValid() {
             toolbarEditor->title.translated() == QStringLiteral("Annotation toolbar settings") &&
             toolbarEditor->description.translated() ==
                 QStringLiteral("Drag annotation tools to reorder them or stack them in the same "
-                               "toolbar position.") &&
+                               "toolbar position") &&
             toolbarEditor->aliases.size() == 2 &&
             toolbarEditor->aliases.at(0).translated() == QStringLiteral("Tool positions") &&
             toolbarEditor->aliases.at(1).translated() == QStringLiteral("Stack annotation tools") &&
@@ -2083,7 +2090,7 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Screenshot toolbar settings") &&
             screenshotToolbarEditor->description.translated() ==
                 QStringLiteral("Drag screenshot tools to reorder them or stack them in the same "
-                               "toolbar position.") &&
+                               "toolbar position") &&
             screenshotToolbarEditor->aliases.size() == 3 &&
             screenshotToolbarEditor->aliases.at(0).translated() ==
                 QStringLiteral("Custom screenshot toolbar") &&
@@ -2173,7 +2180,7 @@ void builtInCatalogIsCompleteAndValid() {
                 recordingAutoHide->title.translated() == QStringLiteral("Auto-hide toolbar") &&
                 recordingAutoHide->description.translated() ==
                     QStringLiteral("Hide the toolbar near the left or right screen edge. Hover "
-                                   "over the edge control to show it again.") &&
+                                   "over the edge control to show it again") &&
                 recordingAutoHide->configurationKey ==
                     QStringLiteral("screen_recording/auto_hide_toolbar") &&
                 std::get<settings::SettingsSwitchDefinition>(recordingAutoHide->payload).binding ==
@@ -3980,13 +3987,13 @@ void memoryOptimizationPolicyCatalog() {
     require(section->items.first().id == QStringLiteral("system.application-qos") &&
                 item->description.translated() ==
                     QStringLiteral("Smart Control releases unused heap memory while the app is "
-                                   "idle. Active captures and pinned images are kept."),
+                                   "idle. Active captures and pinned images are kept"),
             "macOS exposes memory policy after QoS with heap reclamation guidance");
 #else
     require(section->items.first().id == QStringLiteral("system.application-priority") &&
                 item->description.translated() ==
                     QStringLiteral("Smart Control trims resident memory while the app is idle. "
-                                   "The next use may briefly take longer."),
+                                   "The next use may briefly take longer"),
             "Windows retains memory policy after priority with resident memory guidance");
 #endif
     const auto* select = std::get_if<settings::SettingsSelectDefinition>(&item->payload);
@@ -4102,7 +4109,7 @@ int main(int argc, char** argv) {
             registry.catalog().item({QStringLiteral("general"), QStringLiteral("system-general"),
                                      QStringLiteral("system.auto-start-at-boot")});
         require(startup && QString::fromUtf8(startup->description.source) ==
-                               u"Start Snow Shot in the background when you log in.",
+                               u"Start Snow Shot in the background when you log in",
                 "Store startup description explains only the behavior of this setting");
         require(
             registry.fieldForSwitch(settings::SettingsSwitchBinding::AutoStartAtBoot) &&
@@ -4203,7 +4210,7 @@ int main(int argc, char** argv) {
                            QStringLiteral("system.login-item-settings")});
     require(login && QString::fromUtf8(login->title.source) == u"Launch at login" &&
                 QString::fromUtf8(login->description.source) ==
-                    u"Start Snow Shot in the background when you log in." &&
+                    u"Start Snow Shot in the background when you log in" &&
                 login->configurationKey == u"system/auto_start_at_boot",
             "macOS login setting preserves its binding with native wording");
     require(loginSettings &&
