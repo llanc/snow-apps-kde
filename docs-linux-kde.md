@@ -1,11 +1,12 @@
 # Linux and KDE port status
 
-This fork has an experimental Snow Shot build for CachyOS x86-64 with KDE Plasma
-on Wayland. The full application builds and starts on the development host.
+This fork has experimental Snow Shot and Snow Image Viewer builds for CachyOS
+x86-64 with KDE Plasma on Wayland. Both applications build on the development host.
 Screenshot acquisition, selection and rendering have been exercised with a
 synthetic desktop portal in both Qt offscreen mode and an isolated virtual KWin
 Wayland session; shortcut registration and release were also tested against that
-KWin session. The real desktop portal's permission flow has not yet been tested.
+KWin session. The viewer's image loading and edit worker have offscreen tests.
+The real desktop portal's permission flow has not yet been tested.
 There is no Linux installer yet.
 
 The in-progress screenshot path uses the XDG desktop screenshot portal and
@@ -17,7 +18,8 @@ selection, screen recording, global mouse actions, and Linux packaging still nee
 platform implementation. Cursor capture is unavailable. The built-in updater is
 disabled on Linux so it cannot install a Windows release. The Rust capture API
 remains unsupported on Linux for its other consumers, including the separate
-direct-capture path. Image Viewer and the mini edition are not part of this build.
+direct-capture path. Some viewer actions, including Windows shell integration,
+remain unavailable. The mini edition is not part of this build.
 
 ## Build and run
 
@@ -39,10 +41,11 @@ truth.
 mise install rust@1.97.1 rust@nightly-2026-09-08 python@3.14
 scripts/build-linux-kde.sh
 scripts/run-snow-shot-linux.sh --show-main-window
+scripts/run-snow-image-viewer-linux.sh /path/to/image.png
 ```
 
 The first build initializes submodules, bootstraps the pinned repository-local
-vcpkg and installs its Snow Shot feature dependencies; this can take a long
+vcpkg and installs the Snow Shot and Image Viewer dependencies; this can take a long
 time. Later builds may pass `--skip-dependencies` when those dependencies are
 already current, and `--jobs N` controls parallelism. The script uses a Debug
 build and Clang, disables unrelated targets, and leaves generated files under
@@ -52,31 +55,54 @@ not under `/usr`. The workspace's existing Debug API configuration applies unles
 
 ## Focused Linux checks
 
-These tests use a private D-Bus session and a fake portal/shortcut service; they
-do not register shortcuts or capture the real desktop. They require CMake,
+These tests use a private D-Bus session and simulated portal/shortcut services;
+they do not register shortcuts with or capture the real desktop. They require CMake,
 Ninja, a C++20 compiler, Qt 6.12.0 Core/Gui/Widgets/DBus development files,
 and `dbus-run-session`:
 
 ```sh
+# On this host only, add the repository-local host tools when needed.
+if [ -x build/host-tools/root/usr/bin/cmake ]; then
+  export PATH="$PWD/build/host-tools/root/usr/bin:$PATH"
+  export LD_LIBRARY_PATH="$PWD/build/host-tools/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 cmake -S test-support/linux-portal -B build/linux-portal-tests -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/linux-portal-tests
 ctest --test-dir build/linux-portal-tests -R '^snow-shot-linux-(portal|shortcut|update)-tests$' --output-on-failure
-python3 scripts/test-linux-build-support.py
-python3 scripts/test-sync-upstream.py
-python3 scripts/test-linux-startup.py build/linux-snow-shot-clang/snow_shot/snow_shot
-python3 scripts/test-linux-screenshot-integration.py \
+mise x python@3.14 -- python scripts/test-linux-build-support.py
+mise x python@3.14 -- python scripts/test-sync-upstream.py
+mise x python@3.14 -- python scripts/test-linux-startup.py build/linux-snow-shot-clang/snow_shot/snow_shot
+mise x python@3.14 -- python scripts/test-linux-screenshot-integration.py \
   build/linux-snow-shot-clang/snow_shot/snow_shot \
   build/linux-snow-shot-clang/snow_shot/snow-shot-mcp \
   build/linux-portal-tests/snow-shot-linux-fake-portal \
   --wayland --kde-shortcut-probe build/linux-portal-tests/snow-shot-linux-real-shortcut-tests
 ```
 
-Run Python through the configured `mise` environment on the CachyOS development
-host. The final integration command requires `kwin_wayland`; it starts a virtual
+The final integration command requires `kwin_wayland`; it starts a virtual
 compositor and a private D-Bus session, uses isolated configuration directories,
 and never captures the real desktop. When configuring this host in a non-ASCII
 directory, `-DCMAKE_CXX_SCAN_FOR_MODULES=OFF` avoids a compiler module-scanner
 failure. The build script applies that option.
+
+To build and run just the Linux viewer's smoke, memory-limit and editor-pipeline
+checks after a normal build:
+
+```sh
+export VCPKG_ROOT="$PWD/.tools/vcpkg" VCPKG_FORCE_SYSTEM_BINARIES=1
+mise x rust@1.97.1 python@3.14 -- cmake -S . -B build/linux-snow-shot-clang -DSNOW_APPS_BUILD_TESTS=ON
+mise x rust@1.97.1 python@3.14 -- cmake --build build/linux-snow-shot-clang --target \
+  snow_image_viewer_linux_smoke_tests snow_image_viewer_linux_worker_memory_tests \
+  snow_image_viewer_pipeline_notification_lifetime_tests
+ctest --test-dir build/linux-snow-shot-clang \
+  -R '^snow_image_viewer_(linux_smoke|linux_worker_memory|pipeline_notification_lifetime)_tests$' --output-on-failure
+```
+
+The first command requires the repository-local tools and vcpkg environment
+described above. Re-running `scripts/build-linux-kde.sh` restores the normal
+tests-disabled configuration. The KWin integration command also accepts
+`--viewer-probe build/linux-snow-shot-clang/snow_image_viewer/tests/snow_image_viewer_linux_smoke_tests`
+after the viewer test target has been built.
 
 ## Synchronizing the fork
 

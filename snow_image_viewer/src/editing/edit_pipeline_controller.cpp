@@ -469,6 +469,7 @@ EditPipelineController::~EditPipelineController() {
             worker_->waitForFinished(1000);
         }
     }
+    retireWorkerProcess();
     // Deleting the pool would wait for an in-flight decode unconditionally;
     // orphan it past the deadline. The decode task holds only by-value state
     // and shared_ptr handles, and its completion watcher dies with this
@@ -979,8 +980,8 @@ void EditPipelineController::startSourceDecode(
                     return;
                 }
                 for (const PerformanceTiming& timing : result.timings) {
-                    if (!notify(&EditPipelineController::performanceStageCompleted, 0, timing.stage,
-                                timing.nanoseconds))
+                    if (!notify(&EditPipelineController::performanceStageCompleted, quint64{0},
+                                timing.stage, timing.nanoseconds))
                         return;
                 }
                 sourceAnalysis_ = result.analysis;
@@ -1638,10 +1639,7 @@ void EditPipelineController::dispatchPreviewWorker(PendingExact request,
 void EditPipelineController::startWorker() {
     if (shuttingDown_ || (worker_ && worker_->state() != QProcess::NotRunning))
         return;
-    if (worker_) {
-        worker_->deleteLater();
-        worker_ = nullptr;
-    }
+    retireWorkerProcess();
     workerOutput_.clear();
     workerReady_ = false;
     worker_ = new QProcess(this);
@@ -1681,6 +1679,19 @@ void EditPipelineController::startWorker() {
     workerEverStarted_ = true;
     workerStartupTimer_.start();
     worker_->start(QIODevice::ReadWrite);
+}
+
+void EditPipelineController::retireWorkerProcess() {
+    QProcess* process = std::exchange(worker_, nullptr);
+    if (!process)
+        return;
+    process->disconnect(this);
+    // A signal observer may destroy this controller while QProcess is still
+    // delivering its own event. Keep the process alive until that event returns.
+    auto* application = QCoreApplication::instance();
+    process->setParent(application && application->thread() == process->thread() ? application
+                                                                                 : nullptr);
+    process->deleteLater();
 }
 
 void EditPipelineController::sendActiveWorkerJob() {
@@ -2224,10 +2235,7 @@ void EditPipelineController::handleWorkerExit(int exitCode) {
         activeWorkerJob_.reset();
     }
     workerTimeout_.stop();
-    if (worker_) {
-        worker_->deleteLater();
-        worker_ = nullptr;
-    }
+    retireWorkerProcess();
     workerReady_ = false;
     if (affected) {
         if (artifactPublished) {
@@ -2322,8 +2330,7 @@ void EditPipelineController::cancelActiveWorker(bool restart) {
             worker_->kill();
             worker_->waitForFinished(25);
         }
-        worker_->deleteLater();
-        worker_ = nullptr;
+        retireWorkerProcess();
     }
     if (job)
         cleanupWorkerJob(*job);
@@ -2346,8 +2353,7 @@ void EditPipelineController::retireIdleWorker() {
         worker_->kill();
         worker_->waitForFinished(100);
     }
-    worker_->deleteLater();
-    worker_ = nullptr;
+    retireWorkerProcess();
     workerReady_ = false;
     workerOutput_.clear();
     if (!shuttingDown_)

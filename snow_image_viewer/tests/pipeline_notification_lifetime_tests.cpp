@@ -161,8 +161,11 @@ void startupObserversPreserveWorkerReadiness(QObject& observations, const QStrin
             exportId = controller->requestEdit(requestedSettings);
         require(exportId != 0, "request an export after the startup observer returns");
         controller->flushPendingExact();
-        require(QTest::qWaitFor([&] { return exported || !failure.isEmpty(); }, 5000) && exported &&
-                    failure.isEmpty(),
+        const bool completed =
+            QTest::qWaitFor([&] { return exported || !failure.isEmpty(); }, 5000);
+        if (!failure.isEmpty())
+            std::cerr << "Worker export failed: " << failure.toStdString() << '\n';
+        require(completed && exported && failure.isEmpty(),
                 "startup request supersession must preserve worker readiness for CPU export");
         const bool workerReplaced = action == Action::ReplaceWorker;
         require(dispatchedJobs == 1 &&

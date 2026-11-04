@@ -162,7 +162,8 @@ add_executable(snow_image_viewer WIN32
 )
 target_link_libraries(snow_image_viewer PRIVATE snow_image_viewer_lib)
 
-add_executable(snow_image_edit_worker src/editing/worker_main.cpp)
+add_executable(snow_image_edit_worker src/editing/worker_main.cpp
+    src/editing/worker_memory_limit.cpp src/editing/worker_memory_limit.h)
 target_link_libraries(snow_image_edit_worker PRIVATE snow_image_viewer_lib)
 add_dependencies(snow_image_viewer snow_image_edit_worker)
 

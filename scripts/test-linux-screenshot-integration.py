@@ -35,11 +35,14 @@ def main():
                         help="Run against an isolated virtual KWin compositor")
     parser.add_argument("--kde-shortcut-probe", type=Path,
                         help="Also test KDE shortcuts using this probe executable")
+    parser.add_argument("--viewer-probe", type=Path,
+                        help="Also open a synthetic image with the viewer test executable")
     args = parser.parse_args()
     application = args.application.resolve(strict=True)
     bridge = args.bridge.resolve(strict=True)
     fake_portal = args.fake_portal.resolve(strict=True)
     shortcut_probe = args.kde_shortcut_probe.resolve(strict=True) if args.kde_shortcut_probe else None
+    viewer_probe = args.viewer_probe.resolve(strict=True) if args.viewer_probe else None
     if shortcut_probe and not args.wayland:
         parser.error("--kde-shortcut-probe requires --wayland")
     if os.environ.get("SNOW_LINUX_PRIVATE_TEST_BUS") != "1":
@@ -52,6 +55,8 @@ def main():
                 command.append("--wayland")
             if shortcut_probe:
                 command.extend(["--kde-shortcut-probe", str(shortcut_probe)])
+            if viewer_probe:
+                command.extend(["--viewer-probe", str(viewer_probe)])
             return subprocess.call(command, env=env)
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "snow_shot/tests"))
@@ -112,6 +117,9 @@ def main():
                 readable, _, _ = select.select([portal.stdout], [], [], 15)
                 if not readable or portal.stdout.readline().strip() != "ready":
                     raise RuntimeError("The synthetic screenshot portal did not start")
+                if viewer_probe:
+                    subprocess.run([str(viewer_probe)], cwd=root, env=env, check=True, timeout=20)
+                    print("Image viewer opened a synthetic PNG")
                 application_process = subprocess.Popen(
                     [str(application), "--e2e-instance-id=linuxcapture"], cwd=root, env=env,
                     stdout=log, stderr=log, start_new_session=True,

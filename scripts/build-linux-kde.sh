@@ -72,7 +72,7 @@ if ! "$skip_dependencies"; then
     fi
     VCPKG_FORCE_SYSTEM_BINARIES=1 "$vcpkg_root/vcpkg" install \
         "--x-manifest-root=$repo_root" "--x-install-root=$installed_dir" \
-        "--triplet=$triplet" --x-feature=snow-shot \
+        "--triplet=$triplet" --x-feature=snow-shot --x-feature=image-viewer \
         "--overlay-ports=$repo_root/cmake/vcpkg-overlay-ports" \
         "--overlay-triplets=$repo_root/cmake/vcpkg-overlay-triplets" --clean-after-build
 fi
@@ -89,11 +89,12 @@ configure=(
     -DVCPKG_MANIFEST_INSTALL=OFF "-DVCPKG_INSTALLED_DIR=$installed_dir"
     "-DVCPKG_TARGET_TRIPLET=$triplet" "-DSNOW_FFMPEG_ROOT=${SNOW_FFMPEG_ROOT:-/usr}"
     -DSNOW_APPS_BUILD_SNOW_SHOT=ON -DSNOW_APPS_BUILD_SNOW_SHOT_MINI=OFF
-    -DSNOW_APPS_BUILD_IMAGE_VIEWER=OFF -DSNOW_APPS_BUILD_TESTS=OFF
+    -DSNOW_APPS_BUILD_IMAGE_VIEWER=ON -DSNOW_APPS_BUILD_TESTS=OFF
     -DSNOW_APPS_BUILD_BENCHMARKS=OFF -DSNOW_IMAGE_PROFILE=redistributable
 )
 if [[ -n ${SNOW_APPS_API_BASE_URL:-} ]]; then
     configure+=("-DSNOW_APPS_API_BASE_URL=$SNOW_APPS_API_BASE_URL")
 fi
 mise x "rust@$rust_version" python@3.14 -- cmake "${configure[@]}"
-mise x "rust@$rust_version" python@3.14 -- cmake --build "$build_dir" --target snow_shot -j "$jobs"
+mise x "rust@$rust_version" python@3.14 -- cmake --build "$build_dir" \
+    --target snow_shot snow_image_viewer -j "$jobs"

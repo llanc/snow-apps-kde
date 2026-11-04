@@ -1,4 +1,5 @@
 #include "editing/worker_core.h"
+#include "editing/worker_memory_limit.h"
 #include "editing/worker_protocol.h"
 
 #include <QCoreApplication>
@@ -9,14 +10,12 @@
 #include <QJsonObject>
 #include <QThread>
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <limits>
 #include <mutex>
 #include <stop_token>
 #include <thread>
@@ -24,9 +23,7 @@
 #if defined(Q_OS_WIN)
 #include <fcntl.h>
 #include <io.h>
-#include <windows.h>
 #else
-#include <sys/resource.h>
 #include <unistd.h>
 #endif
 
@@ -35,6 +32,7 @@ namespace {
 using snow::image_viewer::EditExportSettings;
 namespace protocol = snow::image_viewer::worker_protocol;
 namespace worker_core = snow::image_viewer::worker_core;
+using snow::image_viewer::applyWorkerMemoryLimit;
 
 std::mutex outputMutex;
 
@@ -52,41 +50,6 @@ std::ptrdiff_t readInput(char* data, std::size_t size) {
 #else
     return static_cast<std::ptrdiff_t>(::read(STDIN_FILENO, data, size));
 #endif
-}
-
-bool applyMemoryLimit(qulonglong bytes, bool initialize = false) {
-    if (bytes == 0)
-        return false;
-#if defined(Q_OS_WIN)
-    Q_UNUSED(initialize);
-    static HANDLE job = CreateJobObjectW(nullptr, nullptr);
-    if (!job)
-        return false;
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    limits.ProcessMemoryLimit =
-        static_cast<SIZE_T>(std::min<qulonglong>(bytes, std::numeric_limits<SIZE_T>::max()));
-    if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
-        return false;
-    static bool assigned = false;
-    if (!assigned) {
-        if (!AssignProcessToJobObject(job, GetCurrentProcess()))
-            return false;
-        assigned = true;
-    }
-#else
-    rlimit limit{};
-    if (getrlimit(RLIMIT_AS, &limit) != 0)
-        return false;
-    const rlim_t requested =
-        static_cast<rlim_t>(std::min<qulonglong>(bytes, std::numeric_limits<rlim_t>::max()));
-    if (initialize)
-        limit.rlim_max = requested;
-    limit.rlim_cur = std::min(requested, limit.rlim_max);
-    if (setrlimit(RLIMIT_AS, &limit) != 0)
-        return false;
-#endif
-    return true;
 }
 
 bool isJobPath(const QString& sessionDirectory, const QString& path, const QString& nonce,
@@ -137,7 +100,7 @@ QJsonObject runJob(const QJsonObject& job, std::stop_token stop, bool* artifactP
     bool memoryLimitValid = false;
     const qulonglong memoryLimit =
         job.value(QStringLiteral("memoryLimit")).toString().toULongLong(&memoryLimitValid);
-    if (!memoryLimitValid || !applyMemoryLimit(memoryLimit)) {
+    if (!memoryLimitValid || !applyWorkerMemoryLimit(memoryLimit)) {
         result.insert(QStringLiteral("error"),
                       QStringLiteral("The worker memory ceiling could not be applied."));
         return result;
@@ -268,7 +231,7 @@ void handlePreviewJob(const QJsonObject& job, std::stop_token stop) {
     bool memoryLimitValid = false;
     const qulonglong memoryLimit =
         job.value(QStringLiteral("memoryLimit")).toString().toULongLong(&memoryLimitValid);
-    if (!memoryLimitValid || !applyMemoryLimit(memoryLimit)) {
+    if (!memoryLimitValid || !applyWorkerMemoryLimit(memoryLimit)) {
         fail(QStringLiteral("The worker memory ceiling could not be applied."));
         return;
     }
@@ -296,7 +259,7 @@ int main(int argc, char* argv[]) {
     bool memoryLimitValid = false;
     const qulonglong memoryLimit =
         qEnvironmentVariable("SNOW_IMAGE_WORKER_MEMORY_LIMIT").toULongLong(&memoryLimitValid);
-    if (!memoryLimitValid || !applyMemoryLimit(memoryLimit, true))
+    if (!memoryLimitValid || !applyWorkerMemoryLimit(memoryLimit, true))
         return 4;
 #if defined(Q_OS_WIN)
     _setmode(_fileno(stdin), _O_BINARY);

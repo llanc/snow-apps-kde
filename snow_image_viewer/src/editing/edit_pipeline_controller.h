@@ -271,6 +271,7 @@ class EditPipelineController final : public QObject {
                                std::shared_ptr<const EncodedArtifact> artifact,
                                RasterProvenance provenance, snow::image::AlphaContent alphaContent);
     void startWorker();
+    void retireWorkerProcess();
     void sendActiveWorkerJob();
     bool notifyWorkerTiming(QProcess& worker, EditRequestId requestId, QString stage,
                             qint64 nanoseconds);

@@ -41,6 +41,24 @@ endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/SnowQtOffscreenTest.cmake")
 snow_shot_import_offscreen_platform(snow_image_viewer_editor_lifecycle_tests)
 snow_shot_offscreen_qpa_environment(SNOW_IMAGE_VIEWER_EDITOR_LIFECYCLE_ENVIRONMENT)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(snow_image_viewer_linux_worker_memory_tests
+        linux_worker_memory_limit_tests.cpp ../src/editing/worker_memory_limit.cpp)
+    target_include_directories(snow_image_viewer_linux_worker_memory_tests PRIVATE ../src)
+    target_link_libraries(snow_image_viewer_linux_worker_memory_tests PRIVATE Qt6::Core)
+    add_test(NAME snow_image_viewer_linux_worker_memory_tests
+        COMMAND snow_image_viewer_linux_worker_memory_tests)
+    set_tests_properties(snow_image_viewer_linux_worker_memory_tests PROPERTIES
+        LABELS "unit" TIMEOUT 30)
+    add_executable(snow_image_viewer_linux_smoke_tests
+        linux_viewer_smoke_tests.cpp ../resources/resources.qrc)
+    target_link_libraries(snow_image_viewer_linux_smoke_tests PRIVATE snow_image_viewer_lib Qt6::Test)
+    snow_shot_import_offscreen_platform(snow_image_viewer_linux_smoke_tests)
+    add_test(NAME snow_image_viewer_linux_smoke_tests COMMAND snow_image_viewer_linux_smoke_tests)
+    set_tests_properties(snow_image_viewer_linux_smoke_tests PROPERTIES
+        ENVIRONMENT "${SNOW_IMAGE_VIEWER_EDITOR_LIFECYCLE_ENVIRONMENT}"
+        LABELS "unit" TIMEOUT 30)
+endif()
 add_executable(snow_image_viewer_image_notification_lifetime_tests
     image_notification_lifetime_tests.cpp ../resources/resources.qrc)
 target_link_libraries(snow_image_viewer_image_notification_lifetime_tests
@@ -68,11 +86,13 @@ add_executable(snow_image_viewer_pipeline_notification_lifetime_tests
 target_link_libraries(snow_image_viewer_pipeline_notification_lifetime_tests
     PRIVATE snow_image_viewer_lib Qt6::Test)
 target_compile_features(snow_image_viewer_pipeline_notification_lifetime_tests PRIVATE cxx_std_20)
-add_dependencies(snow_image_viewer_pipeline_notification_lifetime_tests snow_image_edit_worker)
-add_custom_command(TARGET snow_image_viewer_pipeline_notification_lifetime_tests POST_BUILD
+add_custom_target(snow_image_viewer_pipeline_notification_worker_stage
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:snow_image_edit_worker>
-        $<TARGET_FILE_DIR:snow_image_viewer_pipeline_notification_lifetime_tests>)
+        $<TARGET_FILE_DIR:snow_image_viewer_pipeline_notification_lifetime_tests>
+    DEPENDS snow_image_edit_worker)
+add_dependencies(snow_image_viewer_pipeline_notification_lifetime_tests
+    snow_image_viewer_pipeline_notification_worker_stage)
 if(MSVC)
     target_compile_options(snow_image_viewer_pipeline_notification_lifetime_tests PRIVATE
         /FS /utf-8 /permissive- /Zc:__cplusplus /W4)
