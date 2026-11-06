@@ -690,7 +690,7 @@ class SystemTrayController::Impl {
     void updateGroupMenuTitle() {
         if (groupMenuAction)
             groupMenuAction->setText(
-                QCoreApplication::translate("SystemTrayController", "Window Group: %1")
+                QCoreApplication::translate("SystemTrayController", "Window group: %1")
                     .arg(groupManager->displayName(groupManager->activeGroupId())));
     }
 
@@ -725,13 +725,13 @@ class SystemTrayController::Impl {
         }
         groupMenu->addSeparator();
         QAction* newGroup =
-            groupMenu->addItem(QCoreApplication::translate("SystemTrayController", "New Group"),
+            groupMenu->addItem(QCoreApplication::translate("SystemTrayController", "New group"),
                                outlined_icons::FolderAdd());
         newGroup->setObjectName(QStringLiteral("systemTrayNewGroupAction"));
         QObject::connect(newGroup, &QAction::triggered, &q,
                          [this]() { groupManager->openCreateGroupModal(nullptr); });
         QAction* deleteEmpty = groupMenu->addItem(
-            QCoreApplication::translate("SystemTrayController", "Delete Empty Groups"),
+            QCoreApplication::translate("SystemTrayController", "Delete empty groups"),
             outlined_icons::Clear());
         deleteEmpty->setObjectName(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
         deleteEmpty->setEnabled(hasDeletableEmptyGroups);
@@ -739,7 +739,7 @@ class SystemTrayController::Impl {
                          [this]() { groupManager->openDeleteEmptyGroupsConfirmation(nullptr); });
 
         auto* deleteSpecified = groupMenu->addLazySubMenu(
-            QCoreApplication::translate("SystemTrayController", "Delete Specified Group"),
+            QCoreApplication::translate("SystemTrayController", "Delete specified group"),
             [this](auto* popup) {
                 popup->setObjectName(QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
                 popup->setMinimumWidth(300);

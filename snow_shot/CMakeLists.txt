@@ -3746,6 +3746,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" TIMEOUT 30 RUN_SERIAL TRUE)
         add_executable(snow-shot-macos-smart-selection-smoke
             tests/macos_smart_selection_smoke_test.mm
+            src/presentation/selector/screenshotselectorserviceclient.cpp
             src/platform/macos/windowcaptureexclusion.mm)
         target_include_directories(snow-shot-macos-smart-selection-smoke PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -3755,6 +3756,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-macos-smart-selection-smoke COMMAND snow-shot-macos-smart-selection-smoke)
         set_tests_properties(snow-shot-macos-smart-selection-smoke PROPERTIES
             LABELS "interactive;macos" SKIP_RETURN_CODE 77 TIMEOUT 30 RUN_SERIAL TRUE)
+        add_executable(snow-shot-macos-selector-local-elements-tests
+            tests/macos_selector_local_elements_tests.mm)
+        target_include_directories(snow-shot-macos-selector-local-elements-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_compile_options(snow-shot-macos-selector-local-elements-tests PRIVATE -fobjc-arc)
+        target_link_libraries(snow-shot-macos-selector-local-elements-tests PRIVATE
+            Qt6::Widgets "-framework AppKit")
+        add_test(NAME snow-shot-macos-selector-local-elements-tests
+            COMMAND snow-shot-macos-selector-local-elements-tests -platform offscreen)
+        set_tests_properties(snow-shot-macos-selector-local-elements-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
     endif()
 
     add_executable(snow-shot-selector-policy-tests
@@ -3782,6 +3794,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selector/screenshotselectorcoordinator.cpp
         src/presentation/selector/screenshotselectorserviceclient.cpp
         src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     )
     snow_shot_alias_test_rust_ffi(snow-shot-window-element-api-tests
         snow_ui_selector_service_create
@@ -5510,6 +5526,30 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=windows")
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
     snow_shot_add_translations(snow-shot-pinned-window-tests)
+    foreach(_scale IN ITEMS 1 1.25 2)
+        add_test(NAME snow-shot-pinned-accessibility-${_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --accessibility-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-accessibility-${_scale}-tests PROPERTIES
+            LABELS unit RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=${_scale}")
+    endforeach()
+    if(WIN32)
+        target_link_libraries(snow-shot-pinned-window-tests PRIVATE snow_ui_selector_c)
+        target_include_directories(snow-shot-pinned-window-tests PRIVATE
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/include")
+        add_test(NAME snow-shot-pinned-accessibility-native-tests
+            COMMAND snow-shot-pinned-window-tests --accessibility-native-only -platform windows)
+        set_tests_properties(snow-shot-pinned-accessibility-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    elseif(APPLE)
+        target_sources(snow-shot-pinned-window-tests PRIVATE tests/macos_pinned_accessibility_tests.mm)
+        set_property(SOURCE tests/macos_pinned_accessibility_tests.mm APPEND PROPERTY
+            COMPILE_OPTIONS -fobjc-arc)
+        add_test(NAME snow-shot-pinned-accessibility-native-tests
+            COMMAND snow-shot-pinned-window-tests --accessibility-native-only -platform cocoa)
+        set_tests_properties(snow-shot-pinned-accessibility-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     add_test(NAME snow-shot-image-editing-tests
         COMMAND snow-shot-pinned-window-tests --image-editing-only -platform offscreen)
     add_test(NAME snow-shot-image-editing-spreadsheet-open-tests
@@ -5957,6 +5997,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-custom-server-settings-tests)
     add_test(NAME snow-shot-custom-server-settings-tests COMMAND snow-shot-custom-server-settings-tests)
     set_tests_properties(snow-shot-custom-server-settings-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-proxy-settings-tests
+        tests/proxy_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-proxy-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-proxy-settings-tests)
+    add_test(NAME snow-shot-proxy-settings-tests COMMAND snow-shot-proxy-settings-tests)
+    set_tests_properties(snow-shot-proxy-settings-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
@@ -11727,6 +11778,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screenshot-controller-lifetime-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-ocr-proxy-startup-tests COMMAND snow_shot --ocr-proxy-startup-tests)
+    set_tests_properties(snow-shot-ocr-proxy-startup-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-screenshot-controller-clipboard-tests
         COMMAND snow_shot --clipboard-pin-tests)
     set_tests_properties(snow-shot-screenshot-controller-clipboard-tests PROPERTIES
@@ -13945,6 +14000,7 @@ foreach(_target IN LISTS _text_annotation_targets)
     get_target_property(_sources ${_target} SOURCES)
     if("src/presentation/pinned/screenshotpinnedwindow.cpp" IN_LIST _sources)
         target_sources(${_target} PRIVATE
+            src/presentation/pinned/screenshotpinnedaccessibility.cpp
             src/presentation/pinned/screenshotpinnedtextannotation.cpp
             src/presentation/pinned/screenshotquicktextannotationtoolbar.cpp
             include/snow_shot/presentation/screenshotquicktextannotationtoolbar.h)

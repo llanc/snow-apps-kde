@@ -5530,6 +5530,29 @@ QImage renderWidget(QWidget& widget) {
     return image;
 }
 
+// Include the exterior border while preserving the exact native content bounds at fractional DPI.
+QImage renderPinnedWithBorder(ScreenshotPinnedWindow& window) {
+    const qreal dpr = window.devicePixelRatioF();
+    QImage image(qRound(window.width() * dpr), qRound(window.height() * dpr),
+                 QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(dpr);
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        window.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    }
+    image.setDevicePixelRatio(1.0);
+    const qreal scale = snow_shot::presentation::kPinnedGeometryUnits ==
+                                snow_shot::presentation::PinnedGeometryUnits::LogicalPixels
+                            ? dpr
+                            : 1.0;
+    const QSize nativeSize = window.currentNativeGeometry().size();
+    const int inset = qRound(snow_shot::presentation::pinnedShadowMargin() * scale) - qCeil(dpr);
+    return image.copy(
+        QRect(0, 0, qRound(nativeSize.width() * scale), qRound(nativeSize.height() * scale))
+            .adjusted(inset, inset, -inset, -inset));
+}
+
 void requireColorNear(const QColor& actual, const QColor& expected, int tolerance,
                       const char* message) {
     require(qAbs(actual.red() - expected.red()) <= tolerance &&
@@ -6563,32 +6586,7 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
                 QPoint(qFloor(content.right()) - 17, qCeil(content.top()) + 16),
             "pinned controls should use the reference 16 pixel top-right inset");
 
-    const auto renderPinnedContent = [&] {
-        // The decoration keeps its margin and border in native pixels, so
-        // observe it on the real DPR surface before cropping the content.
-        const qreal dpr = pinnedWindow->devicePixelRatioF();
-        QImage surface(qRound(pinnedWindow->width() * dpr), qRound(pinnedWindow->height() * dpr),
-                       QImage::Format_ARGB32_Premultiplied);
-        surface.setDevicePixelRatio(dpr);
-        surface.fill(Qt::transparent);
-        {
-            QPainter painter(&surface);
-            pinnedWindow->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
-        }
-        surface.setDevicePixelRatio(1.0);
-        const bool logical = snow_shot::presentation::kPinnedGeometryUnits ==
-                             snow_shot::presentation::PinnedGeometryUnits::LogicalPixels;
-        const qreal nativeScale = logical ? dpr : 1.0;
-        const QSize nativeSize = pinnedWindow->currentNativeGeometry().size();
-        const int margin = qRound(snow_shot::presentation::pinnedShadowMargin() * nativeScale);
-        const QRect contentPixels =
-            QRect(QPoint(), QSize(qRound(nativeSize.width() * nativeScale),
-                                  qRound(nativeSize.height() * nativeScale)))
-                .adjusted(margin, margin, -margin, -margin);
-        require(surface.rect().contains(contentPixels),
-                "control styling surface must contain the exact native content extent");
-        return surface.copy(contentPixels);
-    };
+    const auto renderPinnedContent = [&] { return renderPinnedWithBorder(*pinnedWindow); };
 
     // Pinning activates the window on window managers that grant focus, so drive the
     // activation state explicitly to keep the border assertions platform-independent.
@@ -6714,9 +6712,10 @@ void pinnedBorderUsesCeiledWindowDpiPhysicalPixels(SnowCanvasRuntime&) {
                                ? qRound(snow_shot::presentation::pinnedShadowMargin() *
                                         pinnedWindow->devicePixelRatioF())
                                : snow_shot::presentation::pinnedShadowMargin();
-        const QImage rendered =
-            surface.copy(surface.rect().adjusted(margin, margin, -margin, -margin));
         const int borderWidth = qCeil(pinnedWindow->devicePixelRatioF());
+        const int exteriorMargin = margin - borderWidth;
+        const QImage rendered = surface.copy(surface.rect().adjusted(
+            exteriorMargin, exteriorMargin, -exteriorMargin, -exteriorMargin));
 
         const int lastColumn = rendered.width() - 1;
         const int lastRow = rendered.height() - 1;
@@ -6774,21 +6773,21 @@ void pinnedBorderUsesCeiledWindowDpiPhysicalPixels(SnowCanvasRuntime&) {
         const int borderWidth = qCeil(pinnedWindow->devicePixelRatioF());
         const int margin = snow_shot::presentation::pinnedShadowMargin();
         const int contentRight = clientWidth - margin;
-        requireColorNear(store.pixelColor(contentRight - 1, middleY), borderColor, 0,
-                         "the border must end at the exact content edge inside the native margin");
-        requireColorNear(store.pixelColor(contentRight - borderWidth, middleY), borderColor, 0,
+        requireColorNear(store.pixelColor(contentRight, middleY), borderColor, 0,
+                         "the border must begin immediately outside the exact content edge");
+        requireColorNear(store.pixelColor(contentRight + borderWidth - 1, middleY), borderColor, 0,
                          "the border must cover its DPI-rounded width at the content edge");
-        require(store.pixelColor(contentRight - borderWidth - 1, middleY) != borderColor,
-                "the border must stop at its DPI-rounded width before the content edge");
-        require(store.pixelColor(contentRight, middleY).alpha() == 0,
+        require(store.pixelColor(contentRight - 1, middleY) != borderColor,
+                "the border must leave the last content column untouched");
+        require(store.pixelColor(contentRight + borderWidth, middleY).alpha() == 0,
                 "the reserved shadow margin must begin immediately after the content border");
         require(store.pixelColor(clientWidth, middleY) != borderColor,
                 "the store overshoot column past the client edge must stay border-free");
-        requireColorNear(store.pixelColor(middleX, contentRight - 1), borderColor, 0,
+        requireColorNear(store.pixelColor(middleX, contentRight), borderColor, 0,
                          "the bottom border must end at the exact content edge");
-        requireColorNear(store.pixelColor(middleX, contentRight - borderWidth), borderColor, 0,
+        requireColorNear(store.pixelColor(middleX, contentRight + borderWidth - 1), borderColor, 0,
                          "the bottom border must cover its DPI-rounded width at the content edge");
-        requireColorNear(store.pixelColor(margin, middleY), borderColor, 0,
+        requireColorNear(store.pixelColor(margin - 1, middleY), borderColor, 0,
                          "the left border must stay anchored at the content origin");
 
         pinnedWindow->close();
@@ -6989,7 +6988,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     materializePinnedMenuTree(window);
     auto* hideAll =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
-    require(hideAll && hideAll->text() == QStringLiteral("Enable Hide to Top"),
+    require(hideAll && hideAll->text() == QStringLiteral("Enable hide to top"),
             "the bulk Hide to Top action must use its English source label");
     const QStringList menuNames{QStringLiteral("screenshotPinnedOpacityMenu"),
                                 QStringLiteral("screenshotPinnedScaleMenu"),
@@ -7009,7 +7008,7 @@ void pinnedLazyMenuHeadersRetranslate() {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
                 (QByteArray(source) == "Opacity" || QByteArray(source) == "Scale" ||
                  QByteArray(source) == "Load new content" ||
-                 QByteArray(source) == "Enable Hide to Top")) {
+                 QByteArray(source) == "Enable hide to top")) {
                 return QStringLiteral("Translated ") + QString::fromUtf8(source);
             }
             return {};
@@ -7019,7 +7018,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     auto removeTranslator = qScopeGuard([&]() { QCoreApplication::removeTranslator(&translator); });
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Translated Enable Hide to Top"),
+    require(hideAll->text() == QStringLiteral("Translated Enable hide to top"),
             "an existing bulk Hide to Top action must follow LanguageChange");
     const QStringList translatedLabels{QStringLiteral("Translated Opacity"),
                                        QStringLiteral("Translated Scale"),
@@ -7031,7 +7030,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     QCoreApplication::removeTranslator(&translator);
     removeTranslator.dismiss();
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Enable Hide to Top"),
+    require(hideAll->text() == QStringLiteral("Enable hide to top"),
             "the bulk Hide to Top action must restore its original language");
     for (int index = 0; index < headers.size(); ++index) {
         require(headers.at(index)->text() == originalLabels.at(index),
@@ -13265,7 +13264,8 @@ void pinnedCompoundSelectionOffscreen(bool curved = false) {
             "transparent hole must show the alternating preview checkerboard");
     require(image.pixelColor(119, 200) != QColor(219, 219, 219),
             "the window border must not follow the inner cutout");
-    requireColorNear(image.pixelColor(0, image.height() / 2), QColor(219, 219, 219), 2,
+    const QImage decorated = renderPinnedWithBorder(window);
+    requireColorNear(decorated.pixelColor(0, decorated.height() / 2), QColor(219, 219, 219), 2,
                      "compound pin keeps its outer border");
     QImage exported;
     auto artifact = Access::fileSave(window);
@@ -13765,7 +13765,7 @@ void pinnedThumbnailBorderContainsBackgroundOffscreen() {
             require(frame != nullptr, "thumbnail border frame missing");
             const QRectF originalOutline = frame->property("borderOutline").toRectF();
             const auto verifyBorder = [&] {
-                const QImage raster = renderWidget(window);
+                const QImage raster = renderPinnedWithBorder(window);
                 const QColor color = frame->property("borderColor").value<QColor>();
                 for (const QPoint point : {QPoint(0, 0), raster.rect().topRight(),
                                            raster.rect().bottomLeft(), raster.rect().bottomRight()})
@@ -13869,10 +13869,10 @@ void pinnedSelectionBorderOffscreen() {
             if (padding)
                 action->trigger();
             setPinnedWindowActive(window, false);
-            const QImage raster = renderWidget(window);
-            const int inset = qRound(padding * raster.width() / 400.0);
-            const int middle = raster.height() / 2;
+            const QImage raster = renderPinnedWithBorder(window);
             const int borderWidth = qCeil(window.devicePixelRatioF());
+            const int inset = qRound(padding * (raster.width() - 2 * borderWidth) / 400.0);
+            const int middle = raster.height() / 2;
             int right = raster.width() - 1;
             while (right >= 0 && raster.pixelColor(right, middle) != borderColor)
                 --right;
@@ -13904,19 +13904,21 @@ void pinnedSelectionBorderOffscreen() {
                         "rectangular shadow corner must remain transparent without checkerboard");
             const QRect originalOutline = colorBounds(raster);
             Access::scaleBorderFixture(window, 150);
-            const QRect scaledOutline = colorBounds(renderWidget(window));
+            const QRect scaledOutline = colorBounds(renderPinnedWithBorder(window));
             require(qAbs(scaledOutline.width() - originalOutline.width() * 1.5) <= 3,
                     "border tracks canvas zoom");
             Access::scaleBorderFixture(window, 100);
             Access::thumbnailForHideTest(window, true);
-            require(colorBounds(renderWidget(window)).width() < originalOutline.width(),
+            require(colorBounds(renderPinnedWithBorder(window)).width() < originalOutline.width(),
                     "thumbnail scales the image border");
             Access::thumbnailForHideTest(window, false);
             Access::scaleBorderFixture(window, 100);
-            require(qAbs(colorBounds(renderWidget(window)).width() - originalOutline.width()) <= 2,
+            require(qAbs(colorBounds(renderPinnedWithBorder(window)).width() -
+                         originalOutline.width()) <= 2,
                     "thumbnail exit restores border extent");
             Access::transformReplacement(window);
-            require(qAbs(colorBounds(renderWidget(window)).width() - originalOutline.width()) <= 2,
+            require(qAbs(colorBounds(renderPinnedWithBorder(window)).width() -
+                         originalOutline.width()) <= 2,
                     "rotation and reflection preserve square border extent");
             require(window.persistenceSnapshot().borderAppearance == config.borderAppearance,
                     "transforms preserve source border metadata");
@@ -13959,7 +13961,7 @@ void pinnedSelectionBorderOffscreen() {
         require(action && action->isChecked() && window.persistenceSnapshot().showBorder,
                 "shadowed compound selections must show their border by default");
         setPinnedWindowActive(window, false);
-        const QImage withBorder = renderWidget(window);
+        const QImage withBorder = renderPinnedWithBorder(window);
         const int middle = withBorder.height() / 2;
         const int borderWidth = qCeil(window.devicePixelRatioF());
         requireColorNear(withBorder.pixelColor(0, middle), borderColor, 2,
@@ -13969,7 +13971,7 @@ void pinnedSelectionBorderOffscreen() {
         require(withBorder.pixelColor(borderWidth + 1, middle) != borderColor,
                 "compound selection border must not also outline the content edge");
         action->trigger();
-        const QImage withoutBorder = renderWidget(window);
+        const QImage withoutBorder = renderPinnedWithBorder(window);
         require(withoutBorder.pixelColor(0, middle) != borderColor &&
                     withBorder.pixelColor(borderWidth + 1, middle) ==
                         withoutBorder.pixelColor(borderWidth + 1, middle),
@@ -14046,16 +14048,23 @@ void pinnedShowBorderOffscreen() {
                 managementActions.indexOf(showBorder) == 1,
             "Show border must be a checked item directly below Always on Top");
     setPinnedWindowActive(window, false);
-    requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2),
+    requireColorNear(renderPinnedWithBorder(window).pixelColor(0, window.height() / 2),
                      QColor(QStringLiteral("#DBDBDB")), 0,
                      "an enabled border must frame the pin with its configured color");
 
+    const QImage contentWithBorder = renderWidget(window);
+    const QRect nativeGeometry = window.currentNativeGeometry();
     showBorder->trigger();
     waitForUi(20);
     require(!showBorder->isChecked() && !window.persistenceSnapshot().showBorder,
             "unchecking must stop rendering the pinned border");
+    require(renderPinnedWithBorder(window).pixelColor(0, window.height() / 2).alpha() == 0,
+            "a hidden border must clear the exterior rim");
     requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2), QColor(42, 84, 126),
-                     0, "a hidden border must let the rim show image content");
+                     0, "border toggling preserves the first content column");
+    require(renderWidget(window) == contentWithBorder &&
+                window.currentNativeGeometry() == nativeGeometry,
+            "hiding the exterior border preserves all content pixels and window placement");
     waitForUi(300);
     require(persistenceWrites > 0 && !lastPersisted.showBorder,
             "unchecking must schedule a durable border opt-out");
@@ -14064,7 +14073,7 @@ void pinnedShowBorderOffscreen() {
     waitForUi(20);
     require(showBorder->isChecked() && window.persistenceSnapshot().showBorder,
             "re-checking must render the border again");
-    requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2),
+    requireColorNear(renderPinnedWithBorder(window).pixelColor(0, window.height() / 2),
                      QColor(QStringLiteral("#DBDBDB")), 0,
                      "re-checking must repaint the border rim");
 
@@ -14095,8 +14104,8 @@ void pinnedShowBorderOffscreen() {
                     restored.persistenceSnapshot().showBorder == persisted,
                 "a restored pin must adopt its saved border visibility");
         setPinnedWindowActive(restored, false);
-        requireColorNear(renderWidget(restored).pixelColor(0, restored.height() / 2),
-                         persisted ? QColor(219, 219, 219) : QColor(42, 84, 126), 0,
+        requireColorNear(renderPinnedWithBorder(restored).pixelColor(0, restored.height() / 2),
+                         persisted ? QColor(219, 219, 219) : QColor(Qt::transparent), 0,
                          "restored border visibility changes the rendered rim");
         restored.close();
     }
@@ -20732,10 +20741,16 @@ void pinnedOddPixelExtentRemainsSharp() {
         rendered.setDevicePixelRatio(dpr);
         rendered.fill(Qt::transparent);
         window.render(&rendered);
-        rendered = rendered.copy(contentRaster);
-        const QColor borderColor(219, 219, 219);
-        const int middleX = source.width() / 2, middleY = source.height() / 2;
+        const QImage decoratedContent = rendered.copy(contentRaster);
+        for (int y = 0; y < source.height(); ++y)
+            for (int x = 0; x < source.width(); ++x)
+                require(decoratedContent.pixel(x, y) == source.pixel(x, y),
+                        "exterior border preserves every source pixel at fractional DPI");
         const int borderWidth = qCeil(window.devicePixelRatioF());
+        rendered = rendered.copy(
+            contentRaster.adjusted(-borderWidth, -borderWidth, borderWidth, borderWidth));
+        const QColor borderColor(219, 219, 219);
+        const int middleX = rendered.width() / 2, middleY = rendered.height() / 2;
         const QByteArray bottomBorderMessage =
             QStringLiteral("bottom border physical width; content=%1x%2 widget=%3x%4 dpr=%5")
                 .arg(extent.width())
@@ -20747,15 +20762,15 @@ void pinnedOddPixelExtentRemainsSharp() {
         for (int inset = 0; inset < borderWidth; ++inset) {
             requireColorNear(rendered.pixelColor(inset, middleY), borderColor, 0,
                              "left border physical width");
-            requireColorNear(rendered.pixelColor(source.width() - 1 - inset, middleY), borderColor,
-                             0, "right border physical width");
+            requireColorNear(rendered.pixelColor(rendered.width() - 1 - inset, middleY),
+                             borderColor, 0, "right border physical width");
             requireColorNear(rendered.pixelColor(middleX, inset), borderColor, 0,
                              "top border physical width");
-            requireColorNear(rendered.pixelColor(middleX, source.height() - 1 - inset), borderColor,
-                             0, bottomBorderMessage.constData());
+            requireColorNear(rendered.pixelColor(middleX, rendered.height() - 1 - inset),
+                             borderColor, 0, bottomBorderMessage.constData());
         }
-        require(rendered.pixel(borderWidth, middleY) == source.pixel(borderWidth, middleY) &&
-                    rendered.pixel(middleX, borderWidth) == source.pixel(middleX, borderWidth),
+        require(rendered.pixel(borderWidth, middleY) == source.pixel(0, middleY - borderWidth) &&
+                    rendered.pixel(middleX, borderWidth) == source.pixel(middleX - borderWidth, 0),
                 "border stops after its DPI-rounded physical width");
         ScreenshotPinnedWindowTestAccess::copyCurrentViewport(window);
         const auto artifact = ScreenshotPinnedWindowTestAccess::exportArtifact(window);
@@ -24120,9 +24135,9 @@ void pinnedImageSplittingSnapshots() {
                 menu->actions().at(menu->actions().size() - 3)->isSeparator() &&
                 menu->actions().indexOf(reset) == menu->actions().size() - 4 &&
                 menu->actions().indexOf(editing) == menu->actions().indexOf(split) + 1 &&
-                editing->isEnabled() && editing->text() == QStringLiteral("Image Editing") &&
+                editing->isEnabled() && editing->text() == QStringLiteral("Image editing") &&
                 !editing->icon().isNull() && split->isEnabled() &&
-                split->text() == QStringLiteral("Image Splitting") && !split->icon().isNull(),
+                split->text() == QStringLiteral("Image splitting") && !split->icon().isNull(),
             "Process image ends with Image Splitting followed by Image Editing");
     int editingRequests = 0;
     snow_shot::presentation::ImageEditingWindowCoordinator editors({{}, &fixture.groups, nullptr});
@@ -24137,11 +24152,11 @@ void pinnedImageSplittingSnapshots() {
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
-                QByteArray(source) == "Image Editing")
-                return QStringLiteral("Translated Image Editing");
+                QByteArray(source) == "Image editing")
+                return QStringLiteral("Translated Image editing");
             return QByteArray(context) == "ImageSplitWindow" &&
-                           QByteArray(source) == "Image Splitting"
-                       ? QStringLiteral("Translated Image Splitting")
+                           QByteArray(source) == "Image splitting"
+                       ? QStringLiteral("Translated Image splitting")
                        : QString();
         }
     } translator;
@@ -24150,10 +24165,10 @@ void pinnedImageSplittingSnapshots() {
         qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
     QEvent language(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &language);
-    require(split->text() == QStringLiteral("Translated Image Splitting") &&
+    require(split->text() == QStringLiteral("Translated Image splitting") &&
                 split->toolTip() == split->text(),
             "pinned Image Splitting action uses the shared translation context at runtime");
-    require(editing->text() == QStringLiteral("Translated Image Editing") &&
+    require(editing->text() == QStringLiteral("Translated Image editing") &&
                 editing->toolTip() == editing->text(),
             "pinned Image Editing retranslates its label and tooltip at runtime");
     editing->trigger();
@@ -24393,17 +24408,17 @@ void pinnedMultiSelectionMenuAndLocks() {
         actions.size() == 13 &&
             actions.at(0)->objectName() ==
                 QStringLiteral("screenshotPinnedSelectionImageStitching") &&
-            actions.at(0)->text() == QStringLiteral("Image Stitching") &&
+            actions.at(0)->text() == QStringLiteral("Image stitching") &&
             !actions.at(0)->icon().isNull() &&
             actions.at(1)->objectName() ==
                 QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard") &&
-            actions.at(1)->text() == QStringLiteral("Copy Files to Clipboard") &&
+            actions.at(1)->text() == QStringLiteral("Copy files to clipboard") &&
             !actions.at(1)->icon().isNull() &&
             actions.at(2)->objectName() == QStringLiteral("screenshotPinnedSelectionSaveAsFile") &&
-            actions.at(2)->text() == QStringLiteral("Save as File") &&
+            actions.at(2)->text() == QStringLiteral("Save as file") &&
             !actions.at(2)->icon().isNull() && actions.at(3)->isSeparator() &&
             actions.at(4)->objectName() == QStringLiteral("screenshotPinnedSelectionCloseOthers") &&
-            actions.at(5)->menu() && actions.at(5)->text() == QStringLiteral("Align Position") &&
+            actions.at(5)->menu() && actions.at(5)->text() == QStringLiteral("Align position") &&
             actions.at(6)->menu() && actions.at(6)->text() == QStringLiteral("Group") &&
             actions.at(7)->objectName() == QStringLiteral("screenshotPinnedSelectionLock") &&
             actions.at(8)->isSeparator() &&
@@ -24985,12 +25000,12 @@ void pinnedMultiSelectionLiveLanguageAndTheme() {
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionLock")).text() ==
                 QStringLiteral("Translated Lock") &&
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionImageStitching"))
-                    .text() == QStringLiteral("Translated Image Stitching") &&
+                    .text() == QStringLiteral("Translated Image stitching") &&
             pinnedSelectionAction(menu,
                                   QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"))
-                    .text() == QStringLiteral("Translated Copy Files to Clipboard") &&
+                    .text() == QStringLiteral("Translated Copy files to clipboard") &&
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionSaveAsFile"))
-                    .text() == QStringLiteral("Translated Save as File") &&
+                    .text() == QStringLiteral("Translated Save as file") &&
             modal->windowTitle() == QStringLiteral("Translated Destroy selected windows") &&
             modal->text() == QStringLiteral("Translated confirmation 2") &&
             modal->acceptText() == QStringLiteral("Translated Destroy") &&
@@ -27867,6 +27882,8 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "pinned_quick_text_annotation_tests.h"
 #include "pinned_shake_window_tests.h"
 #include "screenshot_pinned_crop_tests.h"
+#include "pinned_accessibility_tests.h"
+#include "pinned_accessibility_native_tests.h"
 #include "screenshot_pinned_menu_lifetime_tests.h"
 #include "pinned_export_snapshot_tests.h"
 #include "pinned_copy_ordering_tests.h"
@@ -27894,6 +27911,16 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--accessibility-only"))) {
+            pinned_accessibility_tests::run();
+            return 0;
+        }
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--accessibility-native-only"))) {
+            pinned_accessibility_tests::runNative();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--copy-ordering-only"))) {
             pinned_copy_ordering_tests::run();
             return 0;

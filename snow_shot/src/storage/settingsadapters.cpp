@@ -709,6 +709,15 @@ bool ShortcutSettings::setScreenshotTranslation(
 }
 #endif
 
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotScrolling() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/screenshot_scrolling"));
+}
+
+bool ShortcutSettings::setScreenshotScrolling(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_scrolling"), bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::screenshotCopy() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_copy"));
 }
@@ -2889,6 +2898,14 @@ QString NetworkSettings::proxy() const {
 
 bool NetworkSettings::setProxy(const QString& proxy) const {
     return cache().setValue(QStringLiteral("network/proxy"), proxy);
+}
+
+QString NetworkSettings::httpProxy() const {
+    return cache().value(QStringLiteral("network/http_proxy")).toString();
+}
+
+bool NetworkSettings::setHttpProxy(const QString& address) const {
+    return cache().setValue(QStringLiteral("network/http_proxy"), address);
 }
 
 } // namespace snow_shot::storage

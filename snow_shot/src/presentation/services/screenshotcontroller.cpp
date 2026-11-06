@@ -88,6 +88,7 @@
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotocrcontroller.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrproxyconfiguration.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotselectioneditworkflow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
@@ -140,9 +141,6 @@
 #include <QSet>
 #include <QUrl>
 #include <QMimeData>
-#include <QNetworkProxy>
-#include <QNetworkProxyFactory>
-#include <QNetworkProxyQuery>
 #include <QTimer>
 #include <QWindow>
 
@@ -195,33 +193,6 @@ template <typename Function> class ScopeExit final {
 
 template <typename Function> ScopeExit<Function> makeScopeExit(Function function) {
     return ScopeExit<Function>(std::move(function));
-}
-
-QString resolvedOcrProxyUrl(const QString& proxyMode) {
-    if (proxyMode != QStringLiteral("system")) {
-        return {};
-    }
-    const QNetworkProxyQuery query(QUrl(QStringLiteral("https://www.modelscope.cn/")));
-    const QList<QNetworkProxy> proxies = QNetworkProxyFactory::systemProxyForQuery(query);
-    for (const QNetworkProxy& proxy : proxies) {
-        if (proxy.type() != QNetworkProxy::HttpProxy &&
-            proxy.type() != QNetworkProxy::Socks5Proxy) {
-            continue;
-        }
-        QUrl url;
-        url.setScheme(proxy.type() == QNetworkProxy::Socks5Proxy ? QStringLiteral("socks5")
-                                                                 : QStringLiteral("http"));
-        url.setHost(proxy.hostName());
-        url.setPort(proxy.port());
-        if (!proxy.user().isEmpty()) {
-            url.setUserName(proxy.user());
-        }
-        if (!proxy.password().isEmpty()) {
-            url.setPassword(proxy.password());
-        }
-        return url.toString(QUrl::FullyEncoded);
-    }
-    return {};
 }
 
 ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) {
@@ -301,7 +272,6 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void handleCapturePresented();
     void invalidateDelayedCapture();
     void resetPendingCaptureRequest();
-    [[nodiscard]] bool finalizeSelectionAspectRatio();
     [[nodiscard]] bool beginCapture(
         PendingSelectionAction action = PendingSelectionAction::None,
         ScreenshotCaptureWorkflow::StartMode mode = ScreenshotCaptureWorkflow::StartMode::Normal);
@@ -815,10 +785,6 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                 } else if (key == QStringLiteral("text_recognition/hardware_acceleration") &&
                            m_ocrRecognition != nullptr) {
                     m_ocrRecognition->setHardwareAcceleration(value.toBool());
-                } else if (key == QStringLiteral("network/proxy")) {
-                    if (m_ocrRecognition != nullptr) {
-                        m_ocrRecognition->setProxyUrl(resolvedOcrProxyUrl(value.toString()));
-                    }
                 }
             });
     }
@@ -1288,14 +1254,13 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
         ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
                                    .filePath(QStringLiteral("assets/ocr"));
     }
-    if (applicationStorage.isInitialized()) {
-        ocrOptions.proxyUrl = resolvedOcrProxyUrl(
-            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString());
-    }
     if (m_ocrRecognition == nullptr) {
         m_ownedOcrRecognition =
             std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, &owner);
         m_ocrRecognition = m_ownedOcrRecognition.get();
+        if (applicationStorage.isInitialized())
+            snow_shot::presentation::bindOcrProxyConfiguration(*m_ocrRecognition,
+                                                               applicationStorage.configuration());
     }
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (!m_qrRecognition)
@@ -1906,14 +1871,7 @@ void ScreenshotController::Impl::handleCapturePresented() {
         m_selection.setRegionType(ScreenshotRegionType::Rectangle);
         m_selection.setSelectionRect(rect);
         m_selection.clearAspectRatioPresetForReplacement();
-        m_interaction.confirmSelection();
-        m_captureState.sessionState = ScreenshotSessionState::Editing;
-        if (m_mcpOptions.value(QStringLiteral("presentation")).toString() !=
-            QStringLiteral("silent")) {
-            m_presentationServices->updateOverlayState();
-            m_presentationServices->showToolbar();
-            m_presentationServices->showSelectionToolbar();
-        }
+        m_overlayInputHandler->confirmSelection();
         emit owner.mcpCapturePresented();
     }
 
@@ -2577,7 +2535,7 @@ void ScreenshotController::Impl::connectSelectorSignals() {
                                  QCoreApplication::translate(
                                      "ScreenshotController",
                                      "Smart selection is using window mode. Enable Accessibility "
-                                     "access in Screenshot settings to select window elements"));
+                                     "access in screenshot settings to select window elements"));
                      });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refreshFinished, &owner,
                      [this](bool ok) {
@@ -2690,6 +2648,12 @@ bool ScreenshotController::Impl::activateTool(ScreenshotActiveTool tool,
     case ScreenshotActiveTool::Latex:
     case ScreenshotActiveTool::Markdown:
     case ScreenshotActiveTool::Html: {
+        if (reason != ScreenshotToolActivationReason::Command) {
+            // Resize and reselection restore through the confirmation fast path,
+            // before the committed region is presented with an intermediate tool.
+            activateRecognitionToolForSelection(tool);
+            return m_interaction.activeTool() == tool;
+        }
         const quint64 sessionId = m_captureState.sessionId;
         const quint64 selectionRevision = m_interaction.selectionModeRevision();
         const quint64 activationGeneration = m_selectionToolActivationGeneration;
@@ -6292,11 +6256,6 @@ bool ScreenshotController::Impl::selectPreviousSelection(bool previous) {
     return true;
 }
 
-bool ScreenshotController::Impl::finalizeSelectionAspectRatio() {
-    return m_selection.finalizeAspectRatio(
-        m_geometry.canvasBounds(), snow_shot::presentation::kScreenshotSelectionMinimumSize);
-}
-
 void ScreenshotController::Impl::synchronizeQrToolbar() {
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     auto* toolbar = m_overlayCoordinator ? m_overlayCoordinator->toolbar() : nullptr;
@@ -6399,75 +6358,74 @@ void ScreenshotController::Impl::scheduleAutomaticQrRecognition() {
 }
 
 void ScreenshotController::Impl::handleSelectionConfirmed() {
-    if (finalizeSelectionAspectRatio() && m_presentationServices != nullptr) {
-        m_presentationServices->updateOverlayState();
-    }
     scheduleAutomaticQrRecognition();
 
     const PendingSelectionAction action =
         std::exchange(m_pendingSelectionAction, PendingSelectionAction::None);
+    auto* toolbar = m_captureWorkflow->suppressCaptureToolbar()
+                        ? m_overlayCoordinator->toolbar()
+                        : m_overlayCoordinator->ensureToolbar();
     if (action == PendingSelectionAction::None) {
+        if (toolbar != nullptr && !m_captureWorkflow->suppressCaptureToolbar())
+            toolbar->restoreRememberedDrawingTool();
         return;
     }
 
-    const quint64 sessionId = m_captureState.sessionId;
-    QTimer::singleShot(0, &owner, [this, action, sessionId]() mutable {
-        if (m_captureState.sessionId != sessionId ||
-            m_captureState.sessionState != ScreenshotSessionState::Editing) {
-            return;
-        }
-        switch (action) {
-        case PendingSelectionAction::Pin:
-            pinSelectionToScreen();
-            break;
-        case PendingSelectionAction::RecognizeText:
-        case PendingSelectionAction::RecognizeTextAndCopy: {
-            const QScopedValueRollback<bool> copyGuard(
-                m_activatingOcrCopy, action == PendingSelectionAction::RecognizeTextAndCopy);
-            m_activatingQuickOcr = m_pendingOcrFromQuickOcrAction;
-            m_pendingOcrFromQuickOcrAction = false;
-            setOcrTool();
-            m_activatingQuickOcr = false;
-            break;
-        }
-        case PendingSelectionAction::RecognizeTextTranslation:
-            m_pendingOcrFromQuickOcrAction = false;
-            setTextTranslationTool();
-            break;
-        case PendingSelectionAction::Copy:
-            copySelectionToClipboard();
-            break;
-        case PendingSelectionAction::QuickSave:
-            quickSaveSelection();
-            break;
-        case PendingSelectionAction::Save:
-            saveSelectionToFile();
-            break;
-        case PendingSelectionAction::StartVideo:
-            startScreenRecording();
-            break;
-        case PendingSelectionAction::StartScrolling:
-            startScrollingScreenshot();
-            break;
-        case PendingSelectionAction::RecognizeTable:
-            setTableTool();
-            break;
-        case PendingSelectionAction::RecognizeQr:
-            setQrTool();
-            break;
-        case PendingSelectionAction::RecognizeFormula:
-            setLatexTool();
-            break;
-        case PendingSelectionAction::ConvertMarkdown:
-            setMarkdownTool();
-            break;
-        case PendingSelectionAction::ConvertHtml:
-            setHtmlTool();
-            break;
-        case PendingSelectionAction::None:
-            break;
-        }
-    });
+    if (toolbar != nullptr)
+        toolbar->suppressRememberedDrawingTool();
+    // The input handler has committed the region and guards session lifetime
+    // around this callback. Dispatch before it presents any editing UI.
+    switch (action) {
+    case PendingSelectionAction::Pin:
+        pinSelectionToScreen();
+        break;
+    case PendingSelectionAction::RecognizeText:
+    case PendingSelectionAction::RecognizeTextAndCopy: {
+        const QScopedValueRollback<bool> copyGuard(
+            m_activatingOcrCopy, action == PendingSelectionAction::RecognizeTextAndCopy);
+        m_activatingQuickOcr = m_pendingOcrFromQuickOcrAction;
+        m_pendingOcrFromQuickOcrAction = false;
+        setOcrTool();
+        m_activatingQuickOcr = false;
+        break;
+    }
+    case PendingSelectionAction::RecognizeTextTranslation:
+        m_pendingOcrFromQuickOcrAction = false;
+        setTextTranslationTool();
+        break;
+    case PendingSelectionAction::Copy:
+        copySelectionToClipboard();
+        break;
+    case PendingSelectionAction::QuickSave:
+        quickSaveSelection();
+        break;
+    case PendingSelectionAction::Save:
+        saveSelectionToFile();
+        break;
+    case PendingSelectionAction::StartVideo:
+        startScreenRecording();
+        break;
+    case PendingSelectionAction::StartScrolling:
+        startScrollingScreenshot();
+        break;
+    case PendingSelectionAction::RecognizeTable:
+        setTableTool();
+        break;
+    case PendingSelectionAction::RecognizeQr:
+        setQrTool();
+        break;
+    case PendingSelectionAction::RecognizeFormula:
+        setLatexTool();
+        break;
+    case PendingSelectionAction::ConvertMarkdown:
+        setMarkdownTool();
+        break;
+    case PendingSelectionAction::ConvertHtml:
+        setHtmlTool();
+        break;
+    case PendingSelectionAction::None:
+        break;
+    }
 }
 
 void ScreenshotController::Impl::shutdown() {
@@ -7006,6 +6964,18 @@ void ScreenshotControllerTestAccess::prepareSelection(ScreenshotController& cont
 
 bool ScreenshotControllerTestAccess::exportActive(const ScreenshotController& controller) {
     return !controller.m_impl->m_activeImageExports.isEmpty();
+}
+
+void ScreenshotControllerTestAccess::confirmCaptureSelection(
+    ScreenshotController& controller, ScreenshotController::CaptureAction action) {
+    auto& state = *controller.m_impl;
+    state.m_overlayCoordinator->resetToolbarForNewCapture();
+    state.m_interaction.enterOverlayVisible(false);
+    state.m_captureState.sessionState = ScreenshotSessionState::OverlayVisible;
+    state.m_pendingSelectionAction = action;
+    state.m_pendingOcrFromQuickOcrAction =
+        action == ScreenshotController::CaptureAction::RecognizeText;
+    state.m_overlayInputHandler->confirmSelection();
 }
 
 ScreenshotOverlayWindow*
