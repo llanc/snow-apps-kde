@@ -121,9 +121,6 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
 
     initializeScreenshotSurface();
     setCanvasClearBackgroundEnabled(false);
-#ifdef Q_OS_LINUX
-    snow_shot::platform::configureWaylandScreenshotOverlay(*this, QGuiApplication::platformName());
-#endif
 }
 
 ScreenshotOverlayWindow::~ScreenshotOverlayWindow() {
@@ -813,6 +810,13 @@ void ScreenshotOverlayWindow::setVisible(bool visible) {
     } else if (!showingPreparedFrame) {
         static_cast<void>(beginPresentation());
     }
+#ifdef Q_OS_LINUX
+    if (visible) {
+        // QWidget::setGeometry can clear the full-screen state during capture preparation.
+        snow_shot::platform::configureWaylandScreenshotOverlay(*this,
+                                                               QGuiApplication::platformName());
+    }
+#endif
     QWidget::setVisible(visible);
 }
 

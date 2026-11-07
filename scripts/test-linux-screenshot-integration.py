@@ -27,6 +27,44 @@ def isolated_environment(root):
     return env
 
 
+def require_fullscreen_overlay(root, pid, compositor_log):
+    script = root / "check-overlay.js"
+    script.write_text(f"""
+function check(window) {{
+    if (window.pid !== {pid} || window.popupWindow || window.deleted) {{
+        return;
+    }}
+    const frame = window.frameGeometry;
+    const screen = workspace.clientArea(KWin.FullScreenArea, window);
+    print("Snow Shot overlay state: " + window.fullScreen + ", frame " + frame + ", screen " + screen);
+    if (window.fullScreen && frame.x === screen.x && frame.y === screen.y &&
+        frame.width === screen.width && frame.height === screen.height) {{
+        print("Snow Shot overlay covers the full output");
+    }}
+}}
+workspace.windowAdded.connect(check);
+workspace.windowList().forEach(check);
+""", encoding="utf-8")
+    dbus = ["qdbus6", "org.kde.KWin"]
+    with Path(compositor_log.name).open(encoding="utf-8") as log:
+        log.seek(0, os.SEEK_END)
+        script_id = subprocess.check_output([
+            *dbus, "/Scripting", "org.kde.kwin.Scripting.loadScript", str(script),
+        ], text=True, timeout=5).strip()
+        try:
+            subprocess.run([*dbus, f"/Scripting/Script{script_id}", "org.kde.kwin.Script.run"],
+                           check=True, timeout=5)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if "Snow Shot overlay covers the full output" in log.read():
+                    return
+                time.sleep(0.05)
+            raise RuntimeError("KWin did not place the screenshot overlay in full screen")
+        finally:
+            subprocess.run([*dbus, "/Scripting", "org.kde.kwin.Scripting.unloadScript", str(script)],
+                           check=True, stdout=subprocess.DEVNULL, timeout=5)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("application", type=Path)
@@ -116,7 +154,8 @@ def main():
                 (root / "compositor.log").open("w+", encoding="utf-8") as compositor_log:
             try:
                 if args.wayland:
-                    compositor_env = dict(env, XDG_CURRENT_DESKTOP="KDE", LIBGL_ALWAYS_SOFTWARE="1")
+                    compositor_env = dict(env, XDG_CURRENT_DESKTOP="KDE", LIBGL_ALWAYS_SOFTWARE="1",
+                                          QT_FORCE_STDERR_LOGGING="1")
                     compositor_command = [
                         "kwin_wayland", "--virtual", "--no-lockscreen", "--no-kactivities",
                         "--socket", "snow-test", "--width", "800", "--height", "600",
@@ -209,15 +248,17 @@ def main():
                                        "['label', 'visible', 'enabled']")
                     if "Screenshot" not in layout or "Exit" not in layout:
                         raise RuntimeError(f"The KDE tray menu has no expected actions: {layout}")
-                    group = re.search(r"<\((\d+), \{[^}]*'label': <'Window Group: [^']+'>", layout)
+                    group = re.search(r"<\((\d+), \{[^}]*'label': <'Window group: [^']+'>", layout)
                     if not group:
                         raise RuntimeError(f"The tray group submenu is missing: {layout}")
                     dbus_call(menu_path, "com.canonical.dbusmenu.AboutToShow", group.group(1))
                     submenu = dbus_call(menu_path, "com.canonical.dbusmenu.GetLayout", group.group(1),
                                         "1", "['label', 'visible', 'enabled']")
-                    if "New Group" not in submenu:
+                    if "New group" not in submenu:
                         raise RuntimeError(f"The tray group submenu did not populate: {submenu}")
-                for presentation in ("silent", "visible"):
+                # The second visible capture reuses a pooled overlay after native surface release.
+                presentations = ("silent", "visible", "visible") if args.wayland else ("silent", "visible")
+                for presentation in presentations:
                     begun = client.tool("snow_shot_screenshot_begin", {
                         "presentation": presentation, "target": "current_monitor",
                         "capture_cursor": False,
@@ -231,9 +272,12 @@ def main():
                         raise RuntimeError(f"Invalid screenshot session: {state}")
                     if (width, height) != tuple(portal_size):
                         raise RuntimeError(f"Screenshot canvas does not match portal pixels: {state}")
+                    if args.wayland and presentation == "visible":
+                        require_fullscreen_overlay(root, application_process.pid, compositor_log)
+                    selection_y = y if presentation == "visible" else y + 10
                     selected = client.tool("snow_shot_screenshot_set_selection", {
                         "session_id": session_id, "expected_revision": begun["revision"],
-                        "type": "rectangle", "bounds": [x + 10, y + 10, 90, 90],
+                        "type": "rectangle", "bounds": [x + 10, selection_y, 90, 90],
                     })["result"]
                     rendered = client.request("tools/call", {
                         "name": "snow_shot_screenshot_render",
