@@ -86,9 +86,10 @@ mise x python@3.14 -- python scripts/test-linux-screenshot-integration.py \
   --wayland --kde-shortcut-probe build/linux-portal-tests/snow-shot-linux-real-shortcut-tests
 ```
 
-The final integration command requires `kwin_wayland` and `qdbus6`. It starts a virtual
-compositor and a private D-Bus session, uses isolated configuration directories,
-and never captures the real desktop. When configuring this host in a non-ASCII
+The final integration command requires `kwin_wayland` and `qdbus6`. Add
+`--fractional-toolbar` to check toolbar sizing at 125% scale with `kscreen-doctor`.
+The test starts a virtual compositor and a private D-Bus session, uses isolated
+configuration directories, and never captures the real desktop. When configuring this host in a non-ASCII
 directory, `-DCMAKE_CXX_SCAN_FOR_MODULES=OFF` avoids a compiler module-scanner
 failure. The build script applies that option.
 

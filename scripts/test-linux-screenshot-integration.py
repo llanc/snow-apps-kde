@@ -27,8 +27,17 @@ def isolated_environment(root):
     return env
 
 
-def require_fullscreen_overlay(root, pid, compositor_log):
-    script = root / "check-overlay.js"
+def require_kwin_screenshot_window(root, pid, compositor_log, *, toolbar=False):
+    if toolbar:
+        expected = "toolbar at its logical size"
+        condition = ("!window.fullScreen && window.output.devicePixelRatio === 1.25 && "
+                     "Math.abs(frame.width - 1242) < 1 && Math.abs(frame.height - 142) < 1")
+    else:
+        expected = "overlay covering the full output"
+        condition = ("window.fullScreen && frame.x === screen.x && frame.y === screen.y && "
+                     "frame.width === screen.width && frame.height === screen.height")
+    marker = f"Snow Shot verified: {expected}"
+    script = root / "check-screenshot-window.js"
     script.write_text(f"""
 function check(window) {{
     if (window.pid !== {pid} || window.popupWindow || window.deleted) {{
@@ -37,9 +46,8 @@ function check(window) {{
     const frame = window.frameGeometry;
     const screen = workspace.clientArea(KWin.FullScreenArea, window);
     print("Snow Shot overlay state: " + window.fullScreen + ", frame " + frame + ", screen " + screen);
-    if (window.fullScreen && frame.x === screen.x && frame.y === screen.y &&
-        frame.width === screen.width && frame.height === screen.height) {{
-        print("Snow Shot overlay covers the full output");
+    if ({condition}) {{
+        print("{marker}");
     }}
 }}
 workspace.windowAdded.connect(check);
@@ -56,10 +64,10 @@ workspace.windowList().forEach(check);
                            check=True, timeout=5)
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
-                if "Snow Shot overlay covers the full output" in log.read():
+                if marker in log.read():
                     return
                 time.sleep(0.05)
-            raise RuntimeError("KWin did not place the screenshot overlay in full screen")
+            raise RuntimeError(f"KWin did not show a screenshot {expected}")
         finally:
             subprocess.run([*dbus, "/Scripting", "org.kde.kwin.Scripting.unloadScript", str(script)],
                            check=True, stdout=subprocess.DEVNULL, timeout=5)
@@ -76,6 +84,8 @@ def main():
                         help="Set the synthetic portal image size")
     parser.add_argument("--qt-scale-factor", type=float,
                         help="Set the Qt screen scale for the application under test")
+    parser.add_argument("--fractional-toolbar", action="store_true",
+                        help="Check toolbar geometry on a virtual output at 125%% scale")
     parser.add_argument("--kde-shortcut-probe", type=Path,
                         help="Also test KDE shortcuts using this probe executable")
     parser.add_argument("--viewer-probe", type=Path,
@@ -103,6 +113,8 @@ def main():
         parser.error("--portal-size must be positive")
     if args.qt_scale_factor is not None and args.qt_scale_factor <= 0:
         parser.error("--qt-scale-factor must be positive")
+    if args.fractional_toolbar and (not args.wayland or args.qt_scale_factor is not None):
+        parser.error("--fractional-toolbar requires --wayland without --qt-scale-factor")
     if os.environ.get("SNOW_LINUX_PRIVATE_TEST_BUS") != "1":
         with tempfile.TemporaryDirectory(prefix="snow-shot-linux-bus-") as temporary:
             env = isolated_environment(Path(temporary))
@@ -115,6 +127,8 @@ def main():
                 command.extend(["--portal-size", *map(str, args.portal_size)])
             if args.qt_scale_factor is not None:
                 command.extend(["--qt-scale-factor", str(args.qt_scale_factor)])
+            if args.fractional_toolbar:
+                command.append("--fractional-toolbar")
             if shortcut_probe:
                 command.extend(["--kde-shortcut-probe", str(shortcut_probe)])
             if viewer_probe:
@@ -158,7 +172,9 @@ def main():
                                           QT_FORCE_STDERR_LOGGING="1")
                     compositor_command = [
                         "kwin_wayland", "--virtual", "--no-lockscreen", "--no-kactivities",
-                        "--socket", "snow-test", "--width", "800", "--height", "600",
+                        "--socket", "snow-test",
+                        "--width", "2560" if args.fractional_toolbar else "800",
+                        "--height", "1920" if args.fractional_toolbar else "600",
                     ]
                     if not shortcut_probe:
                         compositor_command.append("--no-global-shortcuts")
@@ -197,6 +213,9 @@ def main():
                 readable, _, _ = select.select([portal.stdout], [], [], 15)
                 if not readable or portal.stdout.readline().strip() != "ready":
                     raise RuntimeError("The synthetic screenshot portal did not start")
+                if args.fractional_toolbar:
+                    subprocess.run(["kscreen-doctor", "output.1.scale.1.25"], cwd=root, env=env,
+                                   check=True, timeout=10)
                 if args.qt_scale_factor is not None:
                     env["QT_SCALE_FACTOR"] = str(args.qt_scale_factor)
                 if picker_probe:
@@ -273,12 +292,15 @@ def main():
                     if (width, height) != tuple(portal_size):
                         raise RuntimeError(f"Screenshot canvas does not match portal pixels: {state}")
                     if args.wayland and presentation == "visible":
-                        require_fullscreen_overlay(root, application_process.pid, compositor_log)
+                        require_kwin_screenshot_window(root, application_process.pid, compositor_log)
                     selection_y = y if presentation == "visible" else y + 10
                     selected = client.tool("snow_shot_screenshot_set_selection", {
                         "session_id": session_id, "expected_revision": begun["revision"],
                         "type": "rectangle", "bounds": [x + 10, selection_y, 90, 90],
                     })["result"]
+                    if args.fractional_toolbar and presentation == "visible":
+                        require_kwin_screenshot_window(root, application_process.pid, compositor_log,
+                                                       toolbar=True)
                     rendered = client.request("tools/call", {
                         "name": "snow_shot_screenshot_render",
                         "arguments": {"session_id": session_id,

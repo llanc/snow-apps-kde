@@ -23,6 +23,7 @@
 
 #include <QAbstractSpinBox>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QHideEvent>
 #include <QJsonValue>
 #include <QLineEdit>
@@ -74,39 +75,37 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
 
     refreshGeometryForVisibleContent(false);
 #if !defined(Q_OS_MACOS)
-    m_dpiController = new adqt::widgets::AdDpiStableWindowController(this, this);
-    m_dpiController->resetBaseline();
-    connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitReady, this,
-            [this](const adqt::widgets::AdDpiStableWindowTransition& transition) {
-                const QScopedValueRollback<bool> processing(m_processingNativeDpiChange, true);
-                m_committedWindowDevicePixelRatio = transition.context.currentDpr;
-                ensureReferenceDevicePixelRatio();
-                refreshGeometryForVisibleContent(true);
-                // A reused toolbar can intentionally have a new reference extent.
-                // Native sizing is released, but painting remains suspended here.
-                if (!physicalDragActive() && size() != fixedWindowSizeHint()) {
-                    resize(fixedWindowSizeHint());
-                }
-                if (!physicalDragActive()) {
-                    const QPointF physicalOffset =
-                        QPointF(contentOffset() + mainToolbarContentRect().topLeft()) *
-                        transition.context.currentDpr;
-                    m_dpiController->restorePhysicalContentAnchor(transition.physicalContentAnchor,
-                                                                  physicalOffset);
-                }
-                m_lastRequestedContentPosition = contentPosition();
-                m_lastRequestedContentPositionValid = true;
-                updateMainToolbarPositionSnapshot();
-                updateWindowMask();
-            });
-    connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
-            this, [this]() { emit dpiScaleCommitCompleted(); });
-    syncPalettePhysicalScale();
-#else
-    // Cocoa window geometry is already in logical points. DPR only controls
-    // rendering resolution; it must never compensate the toolbar's layout.
-    syncPalettePhysicalScale();
+    if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+        m_dpiController = new adqt::widgets::AdDpiStableWindowController(this, this);
+        m_dpiController->resetBaseline();
+        connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitReady, this,
+                [this](const adqt::widgets::AdDpiStableWindowTransition& transition) {
+                    const QScopedValueRollback<bool> processing(m_processingNativeDpiChange, true);
+                    m_committedWindowDevicePixelRatio = transition.context.currentDpr;
+                    ensureReferenceDevicePixelRatio();
+                    refreshGeometryForVisibleContent(true);
+                    // A reused toolbar can intentionally have a new reference extent.
+                    // Native sizing is released, but painting remains suspended here.
+                    if (!physicalDragActive() && size() != fixedWindowSizeHint()) {
+                        resize(fixedWindowSizeHint());
+                    }
+                    if (!physicalDragActive()) {
+                        const QPointF physicalOffset =
+                            QPointF(contentOffset() + mainToolbarContentRect().topLeft()) *
+                            transition.context.currentDpr;
+                        m_dpiController->restorePhysicalContentAnchor(
+                            transition.physicalContentAnchor, physicalOffset);
+                    }
+                    m_lastRequestedContentPosition = contentPosition();
+                    m_lastRequestedContentPositionValid = true;
+                    updateMainToolbarPositionSnapshot();
+                    updateWindowMask();
+                });
+        connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
+                this, [this]() { emit dpiScaleCommitCompleted(); });
+    }
 #endif
+    syncPalettePhysicalScale();
     registerMaterializedScope(m_paletteHost);
     connect(m_paletteHost->palette(), &ScreenshotToolPalette::materializedScope, this,
             &ScreenshotFloatingToolPaletteWindow::registerMaterializedScope);
@@ -912,29 +911,25 @@ void ScreenshotFloatingToolPaletteWindow::syncPalettePhysicalScale() {
         return;
     }
 
-#if defined(Q_OS_MACOS)
-    const qreal currentDpr = currentWindowDevicePixelRatio();
-    const qreal referenceDpr = currentDpr;
-#else
-    ensureReferenceDevicePixelRatio();
     const qreal currentDpr = m_committedWindowDevicePixelRatio > 0.0
                                  ? m_committedWindowDevicePixelRatio
                                  : currentWindowDevicePixelRatio();
-    const qreal referenceDpr = m_referenceDevicePixelRatio;
-#endif
-    const adqt::widgets::AdControlScaleContext context =
-        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(referenceDpr, currentDpr,
-                                                                      m_paletteScaleMultiplier);
-#if !defined(Q_OS_MACOS)
-    if (m_dpiController != nullptr && !m_dpiController->hasBaseline()) {
-        // Establish the requested pixel extent before moving/resizing can deliver
-        // DPI messages. Measuring an intermediate placement would freeze the old size.
-        const QSize physicalExtent = adqt::widgets::scaleControlSize(
-            kToolbarWindowPresetSize, referenceDpr * m_paletteScaleMultiplier);
-        m_dpiController->captureBaseline(referenceDpr, physicalExtent);
+    // Cocoa and Wayland layout uses logical units. On fractional Wayland outputs,
+    // QScreen can report a larger DPR than the actual window surface.
+    qreal referenceDpr = currentDpr;
+    if (m_dpiController != nullptr) {
+        ensureReferenceDevicePixelRatio();
+        referenceDpr = m_referenceDevicePixelRatio;
+        if (!m_dpiController->hasBaseline()) {
+            // Establish the requested pixel extent before moving/resizing can deliver
+            // DPI messages. Measuring an intermediate placement would freeze the old size.
+            const QSize physicalExtent = adqt::widgets::scaleControlSize(
+                kToolbarWindowPresetSize, referenceDpr * m_paletteScaleMultiplier);
+            m_dpiController->captureBaseline(referenceDpr, physicalExtent);
+        }
     }
-#endif
-    m_paletteHost->setScaleContext(context);
+    m_paletteHost->setScaleContext(adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+        referenceDpr, currentDpr, m_paletteScaleMultiplier));
     m_paletteHost->setShadowMargins(ScreenshotToolPaletteHost::defaultShadowMargins());
 }
 
