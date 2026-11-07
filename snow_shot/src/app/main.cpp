@@ -52,6 +52,7 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QPointer>
 #include <QSysInfo>
 #include <optional>
 #include <utility>
@@ -752,12 +753,26 @@ int main(int argc, char* argv[]) {
         }
 #endif
 #ifdef Q_OS_MACOS
-        const auto startupResult =
-            snow_shot::platform::macos::loginItemAutomaticRegistrationAllowed(launchArguments)
-                ? snow_shot::platform::macos::loginItemService().initialize(
-                      startupSettings.autoStartAtBoot())
-                : snow_shot::platform::macos::LoginItemResult{};
-#elif defined(Q_OS_LINUX)
+        if (snow_shot::platform::macos::loginItemAutomaticRegistrationAllowed(launchArguments)) {
+            const auto completed = [controller = QPointer<snow_shot::app::ApplicationController>(
+                                        &applicationController)](
+                                       const snow_shot::platform::macos::LoginItemResult& result) {
+                if (result.success || !controller)
+                    return;
+                snow_shot::app::reportStartupRegistrationFailure(result.error);
+                // Startup can otherwise have only a tiny floating toolbar visible.
+                controller->showMainWindow();
+                adqt::widgets::AdMessage::Request request;
+                request.content = result.error;
+                adqt::widgets::AdMessageService::error(std::move(request));
+            };
+            const auto admitted = snow_shot::platform::macos::loginItemService().initialize(
+                startupSettings.autoStartAtBoot(), completed);
+            if (!admitted.success)
+                completed(admitted);
+        }
+#else
+#ifdef Q_OS_LINUX
         const auto startupResult =
             snow_shot::platform::linux_desktop::AutostartRegistration::reconcile(
                 startupSettings.autoStartAtBoot(), QCoreApplication::applicationFilePath(),
@@ -769,19 +784,9 @@ int main(int argc, char* argv[]) {
                 ? snow_shot::platform::windows::StartupMode::ElevatedTask
                 : snow_shot::platform::windows::StartupMode::Registry);
 #endif
-        if (!startupResult.success) {
+        if (!startupResult.success)
             snow_shot::app::reportStartupRegistrationFailure(startupResult.error);
-#ifdef Q_OS_MACOS
-            QTimer::singleShot(0, &app, [&applicationController, error = startupResult.error] {
-                // Startup can otherwise have only a tiny floating toolbar visible.
-                // Give the error a readable application surface before opening it.
-                applicationController.showMainWindow();
-                adqt::widgets::AdMessage::Request request;
-                request.content = error;
-                adqt::widgets::AdMessageService::error(std::move(request));
-            });
 #endif
-        }
     });
     QTimer::singleShot(0, &app, [&] {
         singleInstance.setLaunchRequestHandler(

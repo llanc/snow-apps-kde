@@ -28,6 +28,7 @@ bool UpdateService::handoffPending() const {
 void UpdateService::start() {}
 void UpdateService::setMode(const QString&) {}
 void UpdateService::setSystemProxy(bool) {}
+void UpdateService::setProxyConfiguration(const QString&, const QString&) {}
 void UpdateService::setProgressAppearance(const QJsonObject&) {}
 void UpdateService::check(bool) {
     emit operationFinished(QStringLiteral("check"), QStringLiteral("unavailable"));

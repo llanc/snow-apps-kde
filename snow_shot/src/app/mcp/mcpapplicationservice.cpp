@@ -27,6 +27,7 @@
 #include <QScreen>
 #include <QSysInfo>
 #include <QThreadPool>
+#include <QTimer>
 #include <algorithm>
 #include <atomic>
 
@@ -1093,38 +1094,41 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                     &conflict);
                 if (!guard)
                     return;
-                if (runtimeCompletion.valid()) {
-                    ++admittedWork;
-                    auto* runtimeWatcher = new QFutureWatcher<storage::StorageResult>(&q);
-                    QObject::connect(
-                        runtimeWatcher, &QFutureWatcher<storage::StorageResult>::finished, &q,
-                        [this, runtimeWatcher, id, ok, skipped = read.skippedLocalSettings] {
-                            const auto result = runtimeWatcher->result();
-                            runtimeWatcher->deleteLater();
-                            --admittedWork;
-                            if (stopping)
-                                return;
-                            if (ok && result.success) {
-                                QJsonObject output{
-                                    {QStringLiteral("revision"),
-                                     static_cast<qint64>(configuration().revision())}};
-                                if (!skipped.isEmpty())
-                                    output.insert(QStringLiteral("skipped_local_settings"),
-                                                  QJsonArray::fromStringList(skipped));
-                                ports.jobs->complete(id, output);
-                            } else
-                                ports.jobs->fail(id, QStringLiteral("storage_failed"));
-                        });
-                    runtimeWatcher->setFuture(runMcpWork(
-                        &workers, [runtimeCompletion] { return runtimeCompletion.get(); }));
-                } else if (ok) {
+                const auto complete = [this, id, skipped = std::move(read.skippedLocalSettings)] {
                     QJsonObject output{{QStringLiteral("revision"),
                                         static_cast<qint64>(configuration().revision())}};
-                    if (!read.skippedLocalSettings.isEmpty())
+                    if (!skipped.isEmpty())
                         output.insert(QStringLiteral("skipped_local_settings"),
-                                      QJsonArray::fromStringList(read.skippedLocalSettings));
+                                      QJsonArray::fromStringList(skipped));
                     ports.jobs->complete(id, output);
-                } else
+                };
+                if (runtimeCompletion.valid()) {
+                    ++admittedWork;
+                    // Native login-item completion needs the GUI event loop. A pool worker
+                    // waiting on get() would deadlock shutdown's waitForDone().
+                    auto* poll = new QTimer(&q);
+                    poll->setInterval(16);
+                    QObject::connect(poll, &QTimer::timeout, &q,
+                                     [this, poll, runtimeCompletion, id, ok, complete] {
+                                         if (!stopping && runtimeCompletion.wait_for(
+                                                              std::chrono::milliseconds(0)) !=
+                                                              std::future_status::ready)
+                                             return;
+                                         poll->stop();
+                                         poll->deleteLater();
+                                         --admittedWork;
+                                         if (stopping)
+                                             return;
+                                         const auto result = runtimeCompletion.get();
+                                         if (ok && result.success)
+                                             complete();
+                                         else
+                                             ports.jobs->fail(id, QStringLiteral("storage_failed"));
+                                     });
+                    poll->start();
+                } else if (ok)
+                    complete();
+                else
                     ports.jobs->fail(id, conflict ? QStringLiteral("stale_revision")
                                                   : QStringLiteral("storage_failed"));
             });

@@ -63,9 +63,9 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     }
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {
         ++elementEraserCount;
     }
@@ -81,7 +81,7 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void startScrollingScreenshot() override {}
     void splitScrollingScreenshot() override {
@@ -97,10 +97,10 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
     void requestRecapture() override {
@@ -345,6 +345,22 @@ void selectionToolbarStateSurvivesEvictedMoveControls() {
                 restoredButton->buttonStyle() == Button::ButtonStyle::Text &&
                 commands.visibilityCount == 2 && !commands.hidden,
             "the rebuilt visibility button must save and dispatch exactly one new action");
+}
+
+void repeatedToolsReachMoveCommand() {
+    using Tool = ScreenshotToolPalette::Tool;
+    RecordingToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    auto* palette = window.palette();
+    for (const Tool tool : {Tool::Select, Tool::Shape, Tool::Ocr, Tool::Move}) {
+        palette->setActiveTool(tool);
+        const int previousMoves = commands.moveToolCount;
+        const int previousSelects = commands.selectToolCount;
+        require(palette->activateToolShortcut(tool) && palette->activeTool() == Tool::Move &&
+                    commands.moveToolCount == previousMoves + 1 &&
+                    commands.selectToolCount == previousSelects,
+                "repeating a screenshot tool must route exactly once to Edit selection");
+    }
 }
 
 void eraserSubtoolsReachToolbarCommands() {
@@ -712,9 +728,10 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false, bool captu
                     require(button->isHidden(), "capture hotkeys must not reveal hidden buttons");
             }
             if (!completion) {
-                require(dispatch() && commands.calls == 1 &&
-                            window.palette()->activeTool() == Tool::Select,
-                        "hidden tool hotkeys toggle back to Select after selection is committed");
+                require(
+                    dispatch() && commands.calls == 1 &&
+                        window.palette()->activeTool() == Tool::Move,
+                    "hidden tool hotkeys return to Edit selection after selection is committed");
             }
         }
     }
@@ -842,6 +859,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--edit-selection-toolbar-only"))) {
+        repeatedToolsReachMoveCommand();
         editSelectionToolbarFollowsSetting();
         moveOptionsCapabilityIsIndependentOfVisibility();
         applicationStorage.shutdown();
@@ -863,6 +881,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     eraserSubtoolsReachToolbarCommands();
+    repeatedToolsReachMoveCommand();
     editSelectionToolbarFollowsSetting();
     moveOptionsCapabilityIsIndependentOfVisibility();
     selectionToolbarStateSurvivesEvictedMoveControls();
