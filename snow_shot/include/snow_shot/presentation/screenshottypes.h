@@ -62,11 +62,21 @@ struct ScreenshotCaptureRequest {
     // Owned before worker dispatch; native snapshot data is immutable.
     std::shared_ptr<SnowCaptureCursorSnapshotImpl> cursorSnapshot;
     QVector<std::uint32_t> excludedWindowIds;
+#ifdef Q_OS_LINUX
+    bool includeWindowSnapshot = false;
+#endif
 };
 
 struct ScreenshotDisplayPresentationState {
     ScreenshotOverlayWindow* overlay = nullptr;
 };
+
+#ifdef Q_OS_LINUX
+struct ScreenshotWindowSnapshot {
+    QPoint logicalCursor;
+    QVector<QRectF> physicalWindows;
+};
+#endif
 
 struct CapturedDisplayModel {
     QString stableId;
@@ -91,6 +101,9 @@ struct CapturedDisplayModel {
     bool canvasUsesPoints = false;
     bool primary = false;
     bool geometryResolved = false;
+#ifdef Q_OS_LINUX
+    std::optional<ScreenshotWindowSnapshot> windowSnapshot = std::nullopt;
+#endif
 };
 
 struct ScreenshotCaptureLayout {

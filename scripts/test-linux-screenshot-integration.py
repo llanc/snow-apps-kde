@@ -27,32 +27,9 @@ def isolated_environment(root):
     return env
 
 
-def require_kwin_screenshot_window(root, pid, compositor_log, *, toolbar=False):
-    if toolbar:
-        expected = "toolbar at its logical size"
-        condition = ("!window.fullScreen && window.output.devicePixelRatio === 1.25 && "
-                     "Math.abs(frame.width - 1242) < 1 && Math.abs(frame.height - 142) < 1")
-    else:
-        expected = "overlay covering the full output"
-        condition = ("window.fullScreen && frame.x === screen.x && frame.y === screen.y && "
-                     "frame.width === screen.width && frame.height === screen.height")
-    marker = f"Snow Shot verified: {expected}"
+def kwin_script_result(root, compositor_log, source, marker):
     script = root / "check-screenshot-window.js"
-    script.write_text(f"""
-function check(window) {{
-    if (window.pid !== {pid} || window.popupWindow || window.deleted) {{
-        return;
-    }}
-    const frame = window.frameGeometry;
-    const screen = workspace.clientArea(KWin.FullScreenArea, window);
-    print("Snow Shot overlay state: " + window.fullScreen + ", frame " + frame + ", screen " + screen);
-    if ({condition}) {{
-        print("{marker}");
-    }}
-}}
-workspace.windowAdded.connect(check);
-workspace.windowList().forEach(check);
-""", encoding="utf-8")
+    script.write_text(source, encoding="utf-8")
     dbus = ["qdbus6", "org.kde.KWin"]
     with Path(compositor_log.name).open(encoding="utf-8") as log:
         log.seek(0, os.SEEK_END)
@@ -64,13 +41,122 @@ workspace.windowList().forEach(check);
                            check=True, timeout=5)
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
-                if marker in log.read():
-                    return
+                for line in log.readlines():
+                    if marker in line:
+                        return line.split(marker, 1)[1].strip()
                 time.sleep(0.05)
-            raise RuntimeError(f"KWin did not show a screenshot {expected}")
+            raise RuntimeError(f"KWin did not report: {marker}")
         finally:
             subprocess.run([*dbus, "/Scripting", "org.kde.kwin.Scripting.unloadScript", str(script)],
                            check=True, stdout=subprocess.DEVNULL, timeout=5)
+
+
+def require_kwin_screenshot_window(root, pid, compositor_log, *, toolbar=False):
+    if toolbar:
+        expected = "toolbar at its logical size"
+        condition = ("!window.fullScreen && window.output.devicePixelRatio === 1.25 && "
+                     "Math.abs(frame.width - 1242) < 1 && Math.abs(frame.height - 142) < 1")
+    else:
+        expected = "overlay covering the full output"
+        condition = ("window.fullScreen && frame.x === screen.x && frame.y === screen.y && "
+                     "frame.width === screen.width && frame.height === screen.height")
+    marker = f"Snow Shot verified: {expected}"
+    kwin_script_result(root, compositor_log, f"""
+function check(window) {{
+    if (window.pid !== {pid} || window.popupWindow || window.deleted) {{
+        return;
+    }}
+    const frame = window.frameGeometry;
+    const screen = workspace.clientArea(KWin.FullScreenArea, window);
+    print("Snow Shot window: " + window.fullScreen + ", frame " + frame + ", screen " + screen);
+    if ({condition}) {{
+        print("{marker}");
+    }}
+}}
+workspace.windowAdded.connect(check);
+workspace.windowList().forEach(check);
+""", marker)
+
+
+def exercise_window_selection(root, env, compositor_log, app_pid, start_capture, mode):
+    windows = []
+    try:
+        for index, repeats in enumerate((26, 2)):
+            windows.append(subprocess.Popen(
+                ["kdialog", "--title", f"Snow Shot fixture {index}",
+                 "--msgbox", "Synthetic test. " * repeats],
+                cwd=root, env=env, stdout=compositor_log, stderr=compositor_log))
+        marker = "Snow Shot fixture window geometry "
+        pids = [process.pid for process in windows]
+        screen, back, front, cursor = json.loads(kwin_script_result(root, compositor_log, f"""
+function arrange() {{
+    const windows = {pids}.map(pid => workspace.windowList().find(w => w.pid === pid && !w.deleted));
+    if (windows.some(w => !w)) return;
+    const screen = workspace.screens[0].geometry;
+    const cursor = workspace.cursorPos;
+    for (const window of windows) {{
+        const frame = window.frameGeometry;
+        frame.x = Math.max(screen.x, Math.min(cursor.x - frame.width / 2,
+                                             screen.x + screen.width - frame.width));
+        frame.y = Math.max(screen.y, Math.min(cursor.y - frame.height / 2,
+                                             screen.y + screen.height - frame.height));
+        window.frameGeometry = frame;
+        workspace.raiseWindow(window);
+    }}
+    print("{marker}" + JSON.stringify([screen, ...windows.map(w => w.frameGeometry), cursor]));
+}}
+workspace.windowAdded.connect(arrange);
+arrange();
+""", marker))
+        for window in (back, front):
+            if not (window["x"] < cursor["x"] < window["x"] + window["width"] and
+                    window["y"] < cursor["y"] < window["y"] + window["height"]):
+                raise RuntimeError("The overlapping fixture windows do not cover the cursor")
+
+        if mode == "desktop":
+            # KWin resets Show Desktop as soon as its D-Bus caller disconnects.
+            marker = "Snow Shot fixture requested Show Desktop"
+            kwin_script_result(root, compositor_log, f"""
+callDBus("org.kde.KWin", "/KWin", "org.kde.KWin", "showDesktop", true);
+print("{marker}");
+""", marker)
+            dbus = ["qdbus6", "org.kde.KWin", "/KWin"]
+            showing = subprocess.check_output([
+                *dbus, "org.freedesktop.DBus.Properties.Get", "org.kde.KWin", "showingDesktop",
+            ], text=True, timeout=5)
+            if showing.strip() != "true":
+                raise RuntimeError("The isolated compositor did not show the desktop")
+
+        start_capture()
+        require_kwin_screenshot_window(root, app_pid, compositor_log)
+        preview = root / "window-selection.png"
+        subprocess.run(["spectacle", "-b", "-n", "-f", "-o", str(preview)], cwd=root, env=env,
+                       stdout=compositor_log, stderr=compositor_log, check=True, timeout=15)
+        width, height = map(int, subprocess.check_output(
+            ["magick", "identify", "-format", "%w %h", str(preview)], text=True, timeout=5).split())
+
+        # The fake portal image is blue. Test both edges of the bright, selected
+        # region so a whole screen or the larger window behind it cannot pass.
+        y = round((front["y"] + front["height"] / 4 - screen["y"]) * height / screen["height"])
+        left = round((front["x"] - screen["x"]) * width / screen["width"])
+        right = left + round(front["width"] * width / screen["width"])
+        for x, selected in ((left - 8, False), (left + 8, True),
+                            (right - 8, True), (right + 8, False)):
+            pixel = subprocess.check_output(
+                ["magick", str(preview), "-crop", f"1x1+{x}+{y}", "+repage", "-depth", "8",
+                 "rgb:-"], timeout=5)
+            expected = selected and mode == "front"
+            if len(pixel) != 3 or (pixel[2] > 150) != expected:
+                raise RuntimeError(f"Unexpected smart selection at {x}, {y} in {mode} mode")
+        if mode == "front":
+            print("KDE smart selection highlights the top window at fractional scale")
+        else:
+            print("KDE smart selection skips windows hidden by Show Desktop")
+    finally:
+        for window in windows:
+            if window.poll() is None:
+                window.terminate()
+            window.wait(timeout=5)
 
 
 def main():
@@ -86,6 +172,8 @@ def main():
                         help="Set the Qt screen scale for the application under test")
     parser.add_argument("--fractional-toolbar", action="store_true",
                         help="Check toolbar geometry on a virtual output at 125%% scale")
+    parser.add_argument("--window-selection", nargs="?", const="front", choices=("front", "desktop"),
+                        help="Verify smart selection over overlapping or desktop-hidden KDE windows")
     parser.add_argument("--kde-shortcut-probe", type=Path,
                         help="Also test KDE shortcuts using this probe executable")
     parser.add_argument("--viewer-probe", type=Path,
@@ -115,6 +203,8 @@ def main():
         parser.error("--qt-scale-factor must be positive")
     if args.fractional_toolbar and (not args.wayland or args.qt_scale_factor is not None):
         parser.error("--fractional-toolbar requires --wayland without --qt-scale-factor")
+    if args.window_selection and (not args.fractional_toolbar or not tray_watcher):
+        parser.error("--window-selection requires --fractional-toolbar and --tray-watcher")
     if os.environ.get("SNOW_LINUX_PRIVATE_TEST_BUS") != "1":
         with tempfile.TemporaryDirectory(prefix="snow-shot-linux-bus-") as temporary:
             env = isolated_environment(Path(temporary))
@@ -129,6 +219,8 @@ def main():
                 command.extend(["--qt-scale-factor", str(args.qt_scale_factor)])
             if args.fractional_toolbar:
                 command.append("--fractional-toolbar")
+            if args.window_selection:
+                command.extend(["--window-selection", args.window_selection])
             if shortcut_probe:
                 command.extend(["--kde-shortcut-probe", str(shortcut_probe)])
             if viewer_probe:
@@ -314,6 +406,16 @@ def main():
                         raise RuntimeError("The selected synthetic screenshot did not render")
                     client.tool("snow_shot_screenshot_cancel", {"session_id": session_id})
                 if watcher:
+                    if args.window_selection:
+                        screenshot_action = re.search(
+                            r"<\((\d+), \{[^}]*'label': <'Screenshot(?:\\t[^']+)?'>", layout)
+                        if not screenshot_action:
+                            raise RuntimeError("The exported tray Screenshot action was not found")
+                        exercise_window_selection(root, env, compositor_log, application_process.pid,
+                                                  lambda: dbus_call(
+                                                      menu_path, "com.canonical.dbusmenu.Event",
+                                                      screenshot_action.group(1), "clicked",
+                                                      "<0>", "0"), args.window_selection)
                     # Execute an exported action as a tray host, using only isolated state.
                     match = re.search(r"<\((\d+), \{[^}]*'label': <'Exit'>[^}]*\}", layout)
                     if not match:

@@ -59,6 +59,8 @@ class ScreenshotSelectorServiceClient final : public QObject {
     std::optional<quint64> m_snapshotEpoch;
     QVector<std::uintptr_t> m_excludedWindowIds;
     QVector<CapturedDisplayModel> m_displays;
+#elif defined(Q_OS_LINUX)
+    QVector<QRectF> m_windowRects;
 #endif
 };
 

@@ -418,13 +418,21 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the
     // UI thread prepares selector and presentation state.
-    m_context.runtime.captureAsync(ScreenshotCaptureRequest{sessionId,
-                                                            m_state.layoutDirty,
-                                                            m_state.restoreOriginalScreenColors,
-                                                            m_state.captureCursor,
-                                                            ScreenshotCapturePurpose::Initial,
-                                                            {},
-                                                            {}});
+    ScreenshotCaptureRequest request{sessionId,
+                                     m_state.layoutDirty,
+                                     m_state.restoreOriginalScreenColors,
+                                     m_state.captureCursor,
+                                     ScreenshotCapturePurpose::Initial,
+                                     {},
+                                     {}};
+#ifdef Q_OS_LINUX
+    request.includeWindowSnapshot =
+        !m_state.presentationSuppressed && m_startMode != StartMode::ExternalDrag &&
+        m_context.intelligentSelection.smartSelectionEnabled() &&
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+        QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+#endif
+    m_context.runtime.captureAsync(request);
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.async_dispatched");
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
@@ -732,6 +740,12 @@ void ScreenshotCaptureWorkflow::handleLayoutReady(const ScreenshotCaptureLayout&
     }
     m_startup->layoutGeneration = layout.generation;
     m_startup->displays = std::make_shared<const QVector<CapturedDisplayModel>>(resolved);
+#ifdef Q_OS_LINUX
+    if (resolved.size() == 1 && resolved.first().windowSnapshot) {
+        m_startup->logicalPosition = resolved.first().windowSnapshot->logicalCursor;
+        m_startup->invocationLogicalPosition = m_startup->logicalPosition;
+    }
+#endif
     const CapturedDisplayModel* owner = nullptr;
     for (const auto& display : *m_startup->displays)
         if (ScreenshotHalfOpenRect::fromRect(display.logicalRect)

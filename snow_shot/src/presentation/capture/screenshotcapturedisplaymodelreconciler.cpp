@@ -161,6 +161,9 @@ void applySnapshotToDisplay(CapturedDisplayModel& display, const CapturedDisplay
     display.image = snapshot.image;
     display.cursorPatch = snapshot.cursorPatch;
     display.cursorPixelRect = snapshot.cursorPixelRect;
+#ifdef Q_OS_LINUX
+    display.windowSnapshot = snapshot.windowSnapshot;
+#endif
     display.active = true;
 }
 
@@ -205,6 +208,9 @@ void ScreenshotCaptureDisplayModelReconciler::applySnapshots(
 
 void ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(CapturedDisplayModel& display) {
     display.name.clear();
+#ifdef Q_OS_LINUX
+    display.windowSnapshot.reset();
+#endif
     display.capturedLogicalRect = {};
     display.nativeDisplayId = 0;
     display.backingScale = 1.0;

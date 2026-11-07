@@ -290,25 +290,81 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
 }
 
 #else
-// Native selector unavailable on unsupported platforms.
+// Linux uses only the window geometry captured alongside the portal image.
 struct ScreenshotSelectorServiceClient::CallbackBridge {};
 ScreenshotSelectorServiceClient::ScreenshotSelectorServiceClient(
     ScreenshotSelectorServiceClientCallbacks callbacks, QObject* parent)
     : QObject(parent), m_callbacks(std::move(callbacks)) {}
 ScreenshotSelectorServiceClient::~ScreenshotSelectorServiceClient() = default;
 bool ScreenshotSelectorServiceClient::hasService() const {
+#ifdef Q_OS_LINUX
+    return !m_windowRects.isEmpty();
+#else
     return false;
+#endif
 }
 bool ScreenshotSelectorServiceClient::ensureService() {
-    return false;
+    return hasService();
 }
 bool ScreenshotSelectorServiceClient::releaseCache() {
+#ifdef Q_OS_LINUX
+    m_windowRects.clear();
+#endif
     return true;
 }
-void ScreenshotSelectorServiceClient::destroyService() {}
+void ScreenshotSelectorServiceClient::destroyService() {
+    static_cast<void>(releaseCache());
+}
 bool ScreenshotSelectorServiceClient::startRefresh(quint64, const QVector<std::uintptr_t>&) {
     return false;
 }
+#ifdef Q_OS_LINUX
+bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
+    quint64 requestId, const QVector<std::uintptr_t>&,
+    const QVector<CapturedDisplayModel>& displays) {
+    m_windowRects.clear();
+    if (displays.size() != 1 || !displays.first().windowSnapshot)
+        return false;
+    m_windowRects = displays.first().windowSnapshot->physicalWindows;
+    if (!hasService())
+        return false;
+    return QMetaObject::invokeMethod(
+        this,
+        [this, requestId] {
+            if (m_callbacks.refreshFinished)
+                m_callbacks.refreshFinished(requestId, true);
+        },
+        Qt::QueuedConnection);
+}
+bool ScreenshotSelectorServiceClient::startHitTest(quint64 epoch, quint64 requestId,
+                                                   quint64 generation, const QPoint& point,
+                                                   ScreenshotSelectorHitTestMode mode,
+                                                   quint32 displayId) {
+    if (!hasService())
+        return false;
+    ScreenshotSelectorResult result;
+    result.epoch = epoch;
+    result.requestId = requestId;
+    result.generation = generation;
+    result.point = point;
+    result.mode = mode;
+    result.displayId = displayId;
+    result.ok = true;
+    for (const QRectF& rect : m_windowRects) {
+        if (rect.contains(point) && point.x() < rect.right() && point.y() < rect.bottom()) {
+            result.rects.push_back(rect);
+            break;
+        }
+    }
+    return QMetaObject::invokeMethod(
+        this,
+        [this, result = std::move(result)] {
+            if (m_callbacks.resultReady)
+                m_callbacks.resultReady(result);
+        },
+        Qt::QueuedConnection);
+}
+#else
 bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
     quint64, const QVector<std::uintptr_t>&, const QVector<CapturedDisplayModel>&) {
     return false;
@@ -317,6 +373,7 @@ bool ScreenshotSelectorServiceClient::startHitTest(quint64, quint64, quint64, co
                                                    ScreenshotSelectorHitTestMode, quint32) {
     return false;
 }
+#endif
 bool ScreenshotSelectorServiceClient::startRefinement(const ScreenshotSelectorResult&) {
     return false;
 }

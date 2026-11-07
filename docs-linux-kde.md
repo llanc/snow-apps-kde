@@ -9,13 +9,16 @@ KWin session. The viewer's image loading and edit worker have offscreen tests.
 The real desktop portal's permission flow has not yet been tested. A per-user
 menu installer is available; there is no Linux system package yet.
 
-The in-progress screenshot path uses the XDG desktop screenshot portal and
-requires a single display. Portal image pixels are mapped to the display's Qt
-logical coordinates, including when Qt rounds a fractional Wayland scale. The
-portal may ask the user for permission. KDE global shortcuts use
+Snow Shot captures one screen image through the XDG desktop screenshot portal
+and displays it in a full-screen selection overlay. Portal image pixels map to
+Qt logical coordinates, including at fractional scale. The portal may ask for
+permission. For smart selection on KDE Wayland, a one-shot KWin script takes a
+snapshot of window bounds and stacking order just before capture. The rectangle
+tool can select whole windows and dialogs. If window geometry is unavailable,
+drag to select manually. KDE global shortcuts use
 the `org.kde.kglobalaccel` session service and do not steal conflicting keys.
-Multi-display capture, recapture with window exclusions, smart window/element
-selection, screen recording, global mouse actions, and Linux packaging still need
+Multi-display capture, recapture with window exclusions, controls inside windows,
+screen recording, global mouse actions, and Linux packaging still need
 platform implementation. Cursor capture is unavailable. The built-in updater is
 disabled on Linux so it cannot install a Windows release. The Rust capture API
 remains unsupported on Linux for its other consumers, including the separate
@@ -88,10 +91,15 @@ mise x python@3.14 -- python scripts/test-linux-screenshot-integration.py \
 
 The final integration command requires `kwin_wayland` and `qdbus6`. Add
 `--fractional-toolbar` to check toolbar sizing at 125% scale with `kscreen-doctor`.
+With that option, add `--window-selection` and
+`--tray-watcher build/linux-portal-tests/snow-shot-linux-fake-status-notifier`
+to check selection over two overlapping windows using `kdialog`, `spectacle`,
+and ImageMagick's `magick`. Use `--window-selection desktop` to check that hidden
+windows are skipped when Show Desktop is active.
 The test starts a virtual compositor and a private D-Bus session, uses isolated
-configuration directories, and never captures the real desktop. When configuring this host in a non-ASCII
-directory, `-DCMAKE_CXX_SCAN_FOR_MODULES=OFF` avoids a compiler module-scanner
-failure. The build script applies that option.
+configuration directories, and never captures the real desktop. When configuring
+this host in a non-ASCII directory, `-DCMAKE_CXX_SCAN_FOR_MODULES=OFF` avoids a
+compiler module-scanner failure. The build script applies that option.
 
 To build and run just the Linux viewer's smoke, memory-limit and editor-pipeline
 checks after a normal build:

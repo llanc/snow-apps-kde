@@ -1,4 +1,5 @@
 #include "../../presentation/capture/screenshotcaptureworker.h"
+#include "kwinwindowsnapshot.h"
 #include "screenshotportal.h"
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
 
@@ -63,6 +64,14 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
         return;
     }
 
+    const auto windows = request.includeWindowSnapshot
+                             ? snow_shot::platform::snapshotKWinWindows(screen->name)
+                             : std::nullopt;
+    if (cancelled != nullptr && cancelled->load(std::memory_order_relaxed)) {
+        postCaptureResult(coordinator, std::move(result));
+        return;
+    }
+
     snow_shot::platform::ScreenshotPortal portal;
     using PortalResult = snow_shot::platform::ScreenshotPortal::Result;
     PortalResult portalResult = PortalResult::Failed;
@@ -121,6 +130,22 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     display.backend = ScreenshotCaptureBackend::DesktopPortal;
     display.primary = true;
     display.active = true;
+    if (windows) {
+        ScreenshotWindowSnapshot& snapshot = display.windowSnapshot.emplace();
+        const auto logical = screen->logicalRect;
+        const auto cursor = windows->cursor;
+        snapshot.logicalCursor = logical.topLeft() + QPoint(
+            std::min(logical.width() - 1, qRound(std::clamp(cursor.x(), 0.0, 1.0) * logical.width())),
+            std::min(logical.height() - 1,
+                     qRound(std::clamp(cursor.y(), 0.0, 1.0) * logical.height())));
+        snapshot.physicalWindows.reserve(windows->windows.size());
+        for (const QRectF& rect : windows->windows) {
+            snapshot.physicalWindows.emplaceBack(
+                display.physicalRect.x() + rect.x() * image.width(),
+                display.physicalRect.y() + rect.y() * image.height(), rect.width() * image.width(),
+                rect.height() * image.height());
+        }
+    }
 
     ScreenshotCaptureLayout layout;
     layout.requestId = request.requestId;

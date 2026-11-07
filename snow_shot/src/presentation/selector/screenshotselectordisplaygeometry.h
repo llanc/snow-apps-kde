@@ -12,6 +12,9 @@ screenshotSelectorDisplayGeometry(const CapturedDisplayModel& display) {
     geometry.capturedLogicalRect = display.capturedLogicalRect;
     geometry.nativeDisplayId = display.nativeDisplayId;
     geometry.canvasUsesPoints = display.canvasUsesPoints;
+#ifdef Q_OS_LINUX
+    geometry.windowSnapshot = display.windowSnapshot;
+#endif
     return geometry;
 }
 

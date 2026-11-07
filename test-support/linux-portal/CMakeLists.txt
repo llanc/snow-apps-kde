@@ -9,6 +9,7 @@ add_executable(snow-shot-linux-portal-tests
     ../../snow_shot/src/platform/linux/screenshotportal.cpp
     ../../snow_shot/src/platform/linux/screenshotportal.h
     ../../snow_shot/src/platform/linux/screenshotcaptureworker.cpp
+    ../../snow_shot/src/platform/linux/kwinwindowsnapshot.cpp
     ../../snow_shot/src/platform/linux/waylandoverlay.cpp
     ../../snow_shot/src/platform/linux/windowcaptureexclusion.cpp
     ../../snow_shot/src/platform/linux/livewindownative.cpp

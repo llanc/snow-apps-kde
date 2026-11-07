@@ -2206,7 +2206,9 @@ qt_add_executable(snow_shot
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(snow_shot PRIVATE src/platform/linux/screenshotportal.cpp
-        src/platform/linux/screenshotportal.h)
+        src/platform/linux/screenshotportal.h
+        src/platform/linux/kwinwindowsnapshot.cpp
+        src/platform/linux/kwinwindowsnapshot.h)
     target_link_libraries(snow_shot PRIVATE Qt6::DBus)
 endif()
 snow_shot_link_macos_window_platform(snow_shot)

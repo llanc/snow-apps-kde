@@ -57,6 +57,9 @@ See the [port status and limitations](docs-linux-kde.md) before relying on it.
 The real screenshot portal may request permission; multi-display capture,
 screen recording and several platform-specific features are not yet supported.
 
+With smart selection enabled in rectangular capture, hover over a window or
+dialog and click to select its bounds. Drag to select a custom region.
+
 ### Import settings from Windows
 
 Export the settings archive in Windows, then choose **Export & storage → Data
@@ -119,6 +122,8 @@ scripts/build-linux-kde.sh
 构建注册到 KDE 用户级自启项；在 KDE 中禁用该自启项后，程序不会自动重新启用。
 首次截图时桌面门户可能请求授权；
 多显示器截图、录屏和部分平台功能尚未支持，详情见 [移植状态与限制](docs-linux-kde.md)。
+
+矩形截图开启智能选区后，将鼠标移到窗口或对话框上，单击即可选中边界。拖动可框选自定义区域。
 
 ### 从 Windows 导入设置
 
