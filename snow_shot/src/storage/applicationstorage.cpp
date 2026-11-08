@@ -401,6 +401,12 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                        << "write available:" << m_status.writeAvailable;
     emitStatusChanged();
     requestPinnedWindowRetentionCleanup();
+    // These pages now generate thumbnails only in memory. Reclaim files left by
+    // older versions on the usage worker without delaying application startup.
+    const QString legacyThumbnails = StorageUsageTracker::defaultThumbnailCacheDirectory();
+    if (!legacyThumbnails.isEmpty() && QFileInfo::exists(legacyThumbnails)) {
+        static_cast<void>(requestThumbnailCacheClearAsync());
+    }
     if (effectiveDirectory.isEmpty()) {
         return StorageResult::failure(m_status.fallbackReason);
     }
@@ -426,12 +432,14 @@ void ApplicationStorage::createUsageTracker() {
                                   }),
                                   Qt::QueuedConnection);
     };
-    usageOptions.callbacks.clearFinished = [this](StorageCacheKind kind,
-                                                  const StorageResult& result) {
-        QMetaObject::invokeMethod(this,
-                                  snow_shot::runtime::trackRuntimeWork(
-                                      [this, kind, result]() { finishCacheClear(kind, result); }),
-                                  Qt::QueuedConnection);
+    usageOptions.callbacks.clearFinished = [this, generation](StorageCacheKind kind,
+                                                              const StorageResult& result) {
+        QMetaObject::invokeMethod(
+            this, snow_shot::runtime::trackRuntimeWork([this, generation, kind, result]() {
+                if (generation == m_usageGeneration)
+                    finishCacheClear(kind, result);
+            }),
+            Qt::QueuedConnection);
     };
     m_usageTracker = std::make_unique<StorageUsageTracker>(std::move(usageOptions));
     m_status.appUsage = m_usageTracker->usage();
@@ -828,6 +836,9 @@ void ApplicationStorage::finishHistoryClear(bool success, const QString& error) 
 void ApplicationStorage::finishCacheClear(StorageCacheKind kind, const StorageResult& result) {
     qCInfo(storageLog) << "Cache clear finished, kind:" << static_cast<int>(kind)
                        << "success:" << result.success;
+    if (!result.success) {
+        qCWarning(storageLog) << "Cache cleanup failed:" << result.error;
+    }
     m_status.cacheClearing = false;
     if (m_usageTracker != nullptr) {
         m_status.appUsage = m_usageTracker->usage();
@@ -904,8 +915,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                 return StorageDirectoryChangeResult{false, flush.error, {}};
             auto& diagnostics = diagnostics::DiagnosticsService::instance();
             const bool hadDiagnostics = !diagnosticOptions.directories.isEmpty();
+            const bool fixedDiagnostics = !app::distribution::isStoreManaged();
             const QString captureDatabase = diagnostics.crashCaptureDirectory();
-            if (hadDiagnostics)
+            if (hadDiagnostics && !fixedDiagnostics)
                 diagnostics.shutdown();
             std::unique_ptr<PinnedWindowRepository> prepared;
             bool exchanged = false;
@@ -923,7 +935,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             // The native handler keeps writing to its process-lifetime database even
             // while the log writer is stopped. Never copy or remove that live database.
             options.includePath = [expectedPins, migrate, source = before.effectiveDirectory,
-                                   captureDatabase](const QString& path) {
+                                   captureDatabase, fixedDiagnostics](const QString& path) {
+                if (fixedDiagnostics && (path == u"logs" || path.startsWith(u"logs/")))
+                    return false;
                 const QString absolute = QDir::cleanPath(QDir(source).filePath(path));
                 if (!captureDatabase.isEmpty() &&
                     (absolute.compare(captureDatabase, Qt::CaseInsensitive) == 0 ||
@@ -978,7 +992,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             };
             outcome = changeStorageDirectory(options);
             prepared.reset();
-            if (hadDiagnostics) {
+            if (hadDiagnostics && !fixedDiagnostics) {
                 auto next = diagnosticOptions;
                 if (outcome.success) {
                     const QString oldRoot = QDir::cleanPath(before.effectiveDirectory) + u'/';

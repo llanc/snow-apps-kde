@@ -3161,24 +3161,21 @@ SettingsItemDefinition storageStatusItem() {
     };
 }
 
-SettingsItemDefinition clearThumbnailCacheItem() {
+SettingsItemDefinition exportLogsItem() {
     SettingsActionDefinition payload;
-    payload.binding = SettingsActionBinding::ClearThumbnailCache;
-    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear"));
-    payload.iconFactory = []() { return outlined_icons::Clear(); };
-    payload.confirmation = {
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear the thumbnail cache?")),
-        settingsText(QT_TRANSLATE_NOOP(
-            "SettingsCatalog", "Cached history thumbnails will be removed and rebuilt on demand")),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear cache")),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
-    };
+    payload.binding = SettingsActionBinding::ExportLogs;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy"));
+    payload.iconFactory = []() { return outlined_icons::Copy(); };
+    payload.successMessage =
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Logs archive copied to the clipboard"));
     return {
-        QStringLiteral("storage.clear-thumbnails"),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear thumbnail cache")),
+        QStringLiteral("storage.export-logs"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export logs")),
         settingsText(
-            QT_TRANSLATE_NOOP("SettingsCatalog", "Remove cached screenshot-history thumbnails")),
-        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail cache"))},
+            QT_TRANSLATE_NOOP("SettingsCatalog",
+                              "Copy all logs and crash reports as a ZIP archive to the clipboard")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Diagnostics")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Crash reports"))},
         {},
         payload,
     };
@@ -4809,7 +4806,7 @@ constexpr CatalogItemFactory catalogPageFilesHistorySectionPinnedHistoryItems[] 
 
 constexpr CatalogItemFactory catalogPageFilesHistorySectionStorageStatusItems[] = {
     {exportConfigurationItem}, {importConfigurationItem}, {storageStatusItem},
-    {clearThumbnailCacheItem}, {clearRecordingTempItem},
+    {exportLogsItem},          {clearRecordingTempItem},
 };
 
 constexpr CatalogSectionRecord catalogPageFilesHistorySections[] = {

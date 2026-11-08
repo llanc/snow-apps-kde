@@ -1101,6 +1101,10 @@
     <context>
         <name>SettingsBackend</name>
         <message>
+            <source>Another clipboard operation replaced the log export</source>
+            <translation>其他剪貼簿操作取代了記錄匯出</translation>
+        </message>
+        <message>
             <source>Could not restore the Windows context menu preference</source>
             <translation>無法還原 Windows 右鍵選單偏好設定</translation>
         </message>
@@ -1614,10 +1618,6 @@
             <translation>畫筆醒目提示</translation>
         </message>
         <message>
-            <source>Cached history thumbnails will be removed and rebuilt on demand</source>
-            <translation>已快取的歷史縮圖將被刪除，並在需要時重新產生</translation>
-        </message>
-        <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
@@ -1898,10 +1898,6 @@
             <translation>清除</translation>
         </message>
         <message>
-            <source>Clear cache</source>
-            <translation>清除快取</translation>
-        </message>
-        <message>
             <source>Clear closed records</source>
             <translation>清除已關閉記錄</translation>
         </message>
@@ -1920,14 +1916,6 @@
         <message>
             <source>Clear screenshot history?</source>
             <translation>清除截圖歷史？</translation>
-        </message>
-        <message>
-            <source>Clear the thumbnail cache?</source>
-            <translation>清除縮圖快取？</translation>
-        </message>
-        <message>
-            <source>Clear thumbnail cache</source>
-            <translation>清除縮圖快取</translation>
         </message>
         <message>
             <source>Click-through</source>
@@ -2034,12 +2022,20 @@
             <translation>控制截圖顏色選擇器的顯示時機</translation>
         </message>
         <message>
+            <source>Copy</source>
+            <translation>複製</translation>
+        </message>
+        <message>
             <source>Copy after pinning to screen</source>
             <translation>固定到螢幕後複製</translation>
         </message>
         <message>
             <source>Copy after text recognition</source>
             <translation>文字辨識後複製</translation>
+        </message>
+        <message>
+            <source>Copy all logs and crash reports as a ZIP archive to the clipboard</source>
+            <translation>將所有記錄與當機報告打包為 ZIP 壓縮檔並複製到剪貼簿</translation>
         </message>
         <message>
             <source>Copy application settings as a zip archive to the clipboard</source>
@@ -2120,6 +2116,10 @@
         <message>
             <source>Core application settings</source>
             <translation>核心應用程式設定</translation>
+        </message>
+        <message>
+            <source>Crash reports</source>
+            <translation>當機報告</translation>
         </message>
         <message>
             <source>Current monitor</source>
@@ -2310,6 +2310,10 @@
             <translation>銷毀</translation>
         </message>
         <message>
+            <source>Diagnostics</source>
+            <translation>診斷</translation>
+        </message>
+        <message>
             <source>Disable global shortcuts</source>
             <translation>停用全域快速鍵</translation>
         </message>
@@ -2496,6 +2500,10 @@
         <message>
             <source>Export configuration</source>
             <translation>匯出設定</translation>
+        </message>
+        <message>
+            <source>Export logs</source>
+            <translation>匯出記錄</translation>
         </message>
         <message>
             <source>Export recording</source>
@@ -2968,6 +2976,10 @@
         <message>
             <source>Locked shadow color</source>
             <translation>鎖定陰影顏色</translation>
+        </message>
+        <message>
+            <source>Logs archive copied to the clipboard</source>
+            <translation>記錄壓縮檔已複製到剪貼簿</translation>
         </message>
         <message>
             <source>Loop animated images</source>
@@ -3628,10 +3640,6 @@
         <message>
             <source>Remember last used tool</source>
             <translation>記住上次使用的工具</translation>
-        </message>
-        <message>
-            <source>Remove cached screenshot-history thumbnails</source>
-            <translation>刪除已快取的截圖歷史縮圖</translation>
         </message>
         <message>
             <source>Remove closed windows</source>
@@ -4562,10 +4570,6 @@
             <translation>主題、字型、佈景與工具列尺寸</translation>
         </message>
         <message>
-            <source>Thumbnail cache</source>
-            <translation>縮圖快取</translation>
-        </message>
-        <message>
             <source>Thumbnail mode</source>
             <translation>縮圖模式</translation>
         </message>
@@ -5208,14 +5212,6 @@ Unavailable: %2</source>
             <translation>選擇儲存目錄</translation>
         </message>
         <message>
-            <source>Copy today's log file</source>
-            <translation>複製今日記錄檔</translation>
-        </message>
-        <message>
-            <source>Could not copy the log file: %1</source>
-            <translation>無法複製記錄檔：%1</translation>
-        </message>
-        <message>
             <source>Current storage location: %1</source>
             <translation>目前儲存位置：%1</translation>
         </message>
@@ -5270,10 +5266,6 @@ Unavailable: %2</source>
         <message>
             <source>Latest storage error</source>
             <translation>最近的儲存錯誤</translation>
-        </message>
-        <message>
-            <source>Log file copied</source>
-            <translation>已複製記錄檔</translation>
         </message>
         <message>
             <source>Log location</source>
@@ -5414,14 +5406,6 @@ Unavailable: %2</source>
         <message>
             <source>Switching storage directory…</source>
             <translation>正在切換儲存目錄…</translation>
-        </message>
-        <message>
-            <source>Thumbnail cache</source>
-            <translation>縮圖快取</translation>
-        </message>
-        <message>
-            <source>Thumbnail cache disk usage</source>
-            <translation>縮圖快取磁碟用量</translation>
         </message>
         <message>
             <source>Total app storage</source>
