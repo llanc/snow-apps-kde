@@ -2182,6 +2182,10 @@
             <translation>自訂標註填滿顏色的快捷設定按鈕</translation>
         </message>
         <message>
+            <source>Customize the quick-set buttons for annotation highlight colors</source>
+            <translation>自訂標註醒目提示顏色的快捷設定按鈕</translation>
+        </message>
+        <message>
             <source>Customize the quick-set buttons for annotation stroke colors</source>
             <translation>自訂標註描邊顏色的快捷設定按鈕</translation>
         </message>
@@ -2732,6 +2736,14 @@
         <message>
             <source>Highlight</source>
             <translation>醒目提示</translation>
+        </message>
+        <message>
+            <source>Highlight color preset %1</source>
+            <translation>醒目提示顏色預設 %1</translation>
+        </message>
+        <message>
+            <source>Highlight color presets</source>
+            <translation>醒目提示顏色預設</translation>
         </message>
         <message>
             <source>Icon</source>
@@ -5139,6 +5151,10 @@ Unavailable: %2</source>
         <message>
             <source>Choose an absolute storage directory path</source>
             <translation>請輸入儲存目錄的絕對路徑</translation>
+        </message>
+        <message>
+            <source>Could not change the storage directory</source>
+            <translation>無法變更儲存目錄</translation>
         </message>
         <message>
             <source>Could not copy %1</source>

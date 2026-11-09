@@ -1838,6 +1838,8 @@ BuiltInSettingsBackend::colorPaletteValue(SettingsColorPaletteBinding binding) c
         return settings.strokeColors();
     case SettingsColorPaletteBinding::FillColors:
         return settings.fillColors();
+    case SettingsColorPaletteBinding::HighlightColors:
+        return settings.highlightColors();
     }
     return {};
 }
@@ -1850,6 +1852,8 @@ bool BuiltInSettingsBackend::applyColorPaletteValue(SettingsColorPaletteBinding 
         return settings.setStrokeColors(value);
     case SettingsColorPaletteBinding::FillColors:
         return settings.setFillColors(value);
+    case SettingsColorPaletteBinding::HighlightColors:
+        return settings.setHighlightColors(value);
     }
     return false;
 }
@@ -3044,6 +3048,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
             {QStringLiteral("screenshot/fill_color_presets"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/fill_color_presets"))},
+            {QStringLiteral("screenshot/highlight_color_presets"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/highlight_color_presets"))},
             {QStringLiteral("drawing/automatically_select_newly_created_elements"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/automatically_select_newly_created_elements"))},
